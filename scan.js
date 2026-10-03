@@ -48,22 +48,82 @@ const Scan = (() => {
   }
 
   // ---------- Kamera ----------
-  async function start(video) {
+  // Telefoner med flere bakkameraer: finn det som fokuserer nærmest (makro), én gang, og husk det.
+  const CAM_KEY = 'lurt.cameras';
+  let camInfo = null;
+  try { camInfo = JSON.parse(localStorage.getItem(CAM_KEY) || 'null'); } catch { /* */ }
+
+  async function open(constraints) {
+    // Ber om zoom-tilgang der det går; faller tilbake uten
+    try { return await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...constraints, zoom: true } }); }
+    catch (e) {
+      if (e.name === 'NotAllowedError') throw e;
+      return navigator.mediaDevices.getUserMedia({ audio: false, video: constraints });
+    }
+  }
+  const BASE = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+
+  async function probeCameras() {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    const back = devs.filter(d => !/front|user|selfie|forside/i.test(d.label));
+    const list = [];
+    if (back.length > 1) {
+      for (const d of back) {
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: d.deviceId } } });
+          const t = s.getVideoTracks()[0];
+          const c = t.getCapabilities ? t.getCapabilities() : {};
+          list.push({ id: d.deviceId, label: d.label, minFocus: c.focusDistance ? c.focusDistance.min : null, zoomMax: c.zoom ? c.zoom.max : null });
+          s.getTracks().forEach(x => x.stop());
+        } catch { /* hopp over */ }
+      }
+    }
+    const withFocus = list.filter(x => x.minFocus != null && x.minFocus > 0);
+    const macro = withFocus.sort((a, b) => a.minFocus - b.minFocus)[0] || null;
+    const main = list[0] || null;
+    camInfo = { probed: Date.now(), count: devs.length, back: back.length, list,
+      macroId: macro && main && macro.id !== main.id && (!main.minFocus || macro.minFocus < main.minFocus * 0.8) ? macro.id : null };
+    try { localStorage.setItem(CAM_KEY, JSON.stringify(camInfo)); } catch { /* */ }
+    return camInfo;
+  }
+
+  async function start(video, { close = false } = {}) {
     stop();
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-    });
+    // Første gang: undersøk kameraene (krever at tillatelse er gitt, så vi åpner standardkameraet først)
+    if (!camInfo) {
+      const s = await open({ facingMode: { ideal: 'environment' } });
+      s.getTracks().forEach(t => t.stop());
+      await probeCameras().catch(() => null);
+    }
+    const useMacro = close && camInfo && camInfo.macroId;
+    stream = await open(useMacro ? { ...BASE, deviceId: { exact: camInfo.macroId } } : { ...BASE, facingMode: { ideal: 'environment' } })
+      .catch(() => open({ ...BASE, facingMode: { ideal: 'environment' } }));
     video.srcObject = stream;
     video.setAttribute('playsinline', '');
     await video.play();
-    // Prøv kontinuerlig autofokus der det støttes
-    try {
-      const track = stream.getVideoTracks()[0];
-      const caps = track.getCapabilities ? track.getCapabilities() : {};
-      if (caps.focusMode && caps.focusMode.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-    } catch { /* ok */ }
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    try { if (caps.focusMode && caps.focusMode.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch { /* ok */ }
+    // Uten makrolinse: zoom inn for nærbilder, så du kan holde telefonen der den klarer å fokusere
+    if (close && !useMacro) await setZoom(2).catch(() => {});
+    return { macro: !!useMacro };
   }
+
+  function zoomRange() {
+    try { const c = stream.getVideoTracks()[0].getCapabilities(); return c.zoom ? { min: c.zoom.min, max: c.zoom.max } : null; } catch { return null; }
+  }
+  async function setZoom(z) {
+    const r = zoomRange();
+    if (!r) return null;
+    const v = Math.max(r.min, Math.min(r.max, z));
+    await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ zoom: v }] });
+    return v;
+  }
+  function getZoom() {
+    try { return stream.getVideoTracks()[0].getSettings().zoom || 1; } catch { return 1; }
+  }
+  const cameraInfo = () => camInfo;
+  async function reprobe() { camInfo = null; localStorage.removeItem(CAM_KEY); }
 
   function stop() {
     if (loopTimer) { clearTimeout(loopTimer); loopTimer = null; }
@@ -73,10 +133,13 @@ const Scan = (() => {
   function running() { return !!stream; }
 
   // Leter etter strekkode i videoen. Krever to like treff på rad for å unngå feillesing.
+  let loopGen = 0;
   function watchBarcodes(video, onCode) {
     let lastSeen = null;
+    if (loopTimer) clearTimeout(loopTimer);
+    const gen = ++loopGen;
     const tick = async () => {
-      if (!stream) return;
+      if (!stream || gen !== loopGen) return;
       try {
         if (video.readyState >= 2) {
           const code = await detectIn(video);
@@ -224,7 +287,7 @@ const Scan = (() => {
     return u > 0 ? i / u : 0;
   }
 
-  return { start, stop, running, watchBarcodes, snapshot, cropToFrame, bestShot, torchSupported, setTorch, fileToCanvas, detectIn, ocr, validEan, normEan };
+  return { start, zoomRange, setZoom, getZoom, cameraInfo, reprobe, stop, running, watchBarcodes, snapshot, cropToFrame, bestShot, torchSupported, setTorch, fileToCanvas, detectIn, ocr, validEan, normEan };
 })();
 
 // ---------- Bildebehandling før tekstlesing ----------

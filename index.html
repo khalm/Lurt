@@ -45,6 +45,7 @@
         <div class="cam-msg" id="camMsg">Trykk for å starte kameraet</div>
         <button class="cam-start" id="camStart" type="button">📷 Start kamera</button>
         <button class="torch hidden" id="torch" type="button" aria-label="Lommelykt">🔦</button>
+        <button class="lens hidden" id="lens" type="button" aria-label="Nærbilde">🔍 Nær</button>
       </div>
 
       <p class="hint" id="modeHint">Hold strekkoden inne i rammen – den leses automatisk.</p>
@@ -107,6 +108,12 @@
         <p class="small" id="dataStatus"></p>
         <button id="testConn" class="btn" type="button">Test tilkoblingen</button>
         <p id="connStatus" class="small"></p>
+      </div>
+
+      <div class="card">
+        <h3>Kamera</h3>
+        <p class="small" id="camInfo"></p>
+        <button id="reprobe" class="btn ghost" type="button">Sjekk kameraene på nytt</button>
       </div>
 
       <div class="card">

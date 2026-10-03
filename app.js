@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -9,7 +9,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<'
 const { kr } = Verdict;
 
 const state = {
-  mode: 'barcode',
+  mode: 'barcode', close: false, macro: false,
   chain: null, storeLabel: null,
   loc: null,
   product: null, shelfPrice: null, claimedBefore: null,
@@ -136,11 +136,14 @@ $$('.mode').forEach(b => b.addEventListener('click', () => {
   $('#modeHint').textContent = HINTS[state.mode];
   $('#shoot').classList.toggle('hidden', state.mode === 'barcode' || !Scan.running());
   $('#frame').className = 'frame ' + state.mode;
-  if (Scan.running()) beginWatching();
+  const wantClose = state.mode === 'label';
+  if (wantClose !== state.close) setClose(wantClose).then(() => Scan.running() && beginWatching());
+  else if (Scan.running()) beginWatching();
 }));
 
 let torchOn = false;
 function camIdle() {
+  $('#lens').classList.add('hidden');
   torchOn = false; $('#torch').classList.add('hidden'); $('#torch').classList.remove('on');
   $('#cam').classList.remove('live');
   $('#camMsg').textContent = 'Trykk for å starte kameraet';
@@ -153,7 +156,9 @@ async function startCam() {
   try {
     $('#camMsg').textContent = 'Starter kamera …';
     $('#camStart').classList.add('hidden');
-    await Scan.start($('#video'));
+    const r = await Scan.start($('#video'), { close: state.close });
+    state.macro = r.macro;
+    updateLens();
     $('#cam').classList.add('live');
     $('#camMsg').textContent = '';
     $('#shoot').classList.toggle('hidden', state.mode === 'barcode');
@@ -165,6 +170,25 @@ async function startCam() {
   }
 }
 $('#camStart').addEventListener('click', startCam);
+
+// Nærbilde: makrolinse hvis telefonen har det, ellers 2× zoom. Byttes med ett trykk.
+function updateLens() {
+  const b = $('#lens');
+  const hasZoom = !!Scan.zoomRange(), info = Scan.cameraInfo();
+  const canClose = (info && info.macroId) || hasZoom;
+  b.classList.toggle('hidden', !Scan.running() || !canClose);
+  b.classList.toggle('on', state.close);
+  b.textContent = state.close ? (state.macro ? '🔬 Makro' : '🔍 ' + (Math.round(Scan.getZoom() * 10) / 10).toString().replace('.', ',') + '×') : '🔍 Nær';
+}
+async function setClose(on) {
+  state.close = on;
+  if (!Scan.running()) return updateLens();
+  const info = Scan.cameraInfo();
+  if (info && info.macroId) { Scan.stop(); await startCam(); return; } // bytt linse
+  await Scan.setZoom(on ? 2 : 1).catch(() => {});
+  updateLens();
+}
+$('#lens').addEventListener('click', (e) => { e.stopPropagation(); setClose(!state.close); });
 $('#cam').addEventListener('click', (e) => { if (!Scan.running() && e.target !== $('#camStart')) startCam(); });
 
 function beginWatching() {
@@ -563,12 +587,20 @@ async function renderSaved() {
 }));
 
 // ---------- Innstillinger ----------
+function camInfoText() {
+  const i = Scan.cameraInfo();
+  if (!i) return 'Kameraene sjekkes første gang du starter kameraet.';
+  if (i.macroId) return '🔬 Makro-/nærfokuslinse funnet. Den brukes automatisk på hyllelapper (bytt med «Nær»-knappen).';
+  return `Nettleseren gir tilgang til ${i.back || 1} bakkamera${(i.back || 1) > 1 ? 'er' : ''}, men ingen egen makrolinse. Ved nærbilder zoomes det inn i stedet, så du kan holde telefonen litt unna.`;
+}
 function loadSettingsForm() {
+  $('#camInfo').textContent = camInfoText();
   $('#autoStore').checked = settings().autoStore !== false;
   $('#dataStatus').innerHTML = API.access().ready
     ? '✅ Priser hentes fra <a href="https://kassal.app" target="_blank" rel="noopener">Kassalapp</a>. Du trenger ikke gjøre noe.'
     : '⚠️ Appen er ikke koblet til prisdata ennå. Prøv igjen senere – i mellomtiden kan du se eksempeldata.';
 }
+$('#reprobe').addEventListener('click', () => { Scan.reprobe(); $('#camInfo').textContent = 'Sjekkes neste gang du starter kameraet.'; });
 $('#testConn').addEventListener('click', async () => {
   const st = $('#connStatus');
   st.textContent = 'Tester …'; st.className = 'small';

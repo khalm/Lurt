@@ -261,3 +261,5 @@ dialog.sheet::backdrop { background: rgba(0,0,0,.45); }
 .torch { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(0,0,0,.5); font-size: 1.3rem; cursor: pointer; }
 .torch.on { background: var(--accent); }
 .readprev { display: block; max-width: 100%; max-height: 140px; border-radius: 10px; margin-bottom: 4px; }
+.lens { position: absolute; top: 10px; left: 10px; height: 44px; padding: 0 14px; border-radius: 22px; border: 0; background: rgba(0,0,0,.55); color: #fff; font: 600 .9rem Inter, sans-serif; cursor: pointer; }
+.lens.on { background: var(--accent); color: #18201b; }
