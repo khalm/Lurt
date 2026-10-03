@@ -28,15 +28,25 @@ const API = (() => {
   const chainName = (key) => (CHAINS.find(c => c[0] === key) || [null, null])[1];
 
   // ---------- HTTP ----------
+  // Brukerens egen nøkkel/proxy vinner; ellers brukes det som er bygget inn i appen.
+  function access() {
+    const s = settings(), c = window.LURT_CONFIG || {};
+    const ownKey = (s.apiKey || '').trim(), ownProxy = (s.proxy || '').trim();
+    const key = ownKey || (ownProxy ? '' : (c.apiKey || '').trim());
+    const proxy = ownProxy || (ownKey ? '' : (c.proxy || '').trim());
+    return { key, proxy, own: !!(ownKey || ownProxy), ready: !!(key || proxy) };
+  }
+  const builtIn = () => { const c = window.LURT_CONFIG || {}; return !!((c.apiKey || '').trim() || (c.proxy || '').trim()); };
+
   async function get(path) {
-    const s = settings();
-    if (!s.apiKey) throw new ApiError('nokey', 'Mangler API-nøkkel');
-    const base = (s.proxy || '').trim() ? s.proxy.trim().replace(/\/$/, '') : BASE;
+    const a = access();
+    if (!a.ready) throw new ApiError('nokey', 'Mangler API-nøkkel');
+    const base = a.proxy ? a.proxy.replace(/\/$/, '') : BASE;
+    const headers = { 'Accept': 'application/json' };
+    if (a.key) headers['Authorization'] = 'Bearer ' + a.key;
     let res;
     try {
-      res = await fetch(base + path, {
-        headers: { 'Authorization': 'Bearer ' + s.apiKey.trim(), 'Accept': 'application/json' },
-      });
+      res = await fetch(base + path, { headers });
     } catch (e) {
       throw new ApiError(navigator.onLine ? 'network' : 'offline', e.message);
     }
@@ -217,5 +227,5 @@ const API = (() => {
     };
   }
 
-  return { byEan, search, nearbyStores, test, chainKey, chainName, CHAINS, clearCache, ApiError, DEMO_EAN, distKm, settings };
+  return { access, builtIn, byEan, search, nearbyStores, test, chainKey, chainName, CHAINS, clearCache, ApiError, DEMO_EAN, distKm, settings };
 })();

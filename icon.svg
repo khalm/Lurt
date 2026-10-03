@@ -1,8 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#14231b"/>
-  <path d="M120 150h56v156h96v52H120z" fill="#fffdf8"/>
-  <g transform="rotate(12 340 250)">
-    <path d="M298 196c0-38 30-62 70-62s70 24 70 58c0 30-20 44-40 56-14 9-18 14-18 28v10h-52v-14c0-28 12-40 32-52 14-9 22-15 22-28 0-13-10-20-24-20-15 0-26 9-26 24z" fill="#f2c230"/>
-    <circle cx="354" cy="342" r="30" fill="#f2c230"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d3527"/><stop offset="1" stop-color="#0d1812"/>
+    </linearGradient>
+    <linearGradient id="tag" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd84d"/><stop offset="1" stop-color="#f0b81c"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <g transform="rotate(-18 256 268)">
+    <!-- skygge -->
+    <path d="M126 268 L196 180 H378 a26 26 0 0 1 26 26 V330 a26 26 0 0 1 -26 26 H196 Z" fill="#000" opacity=".28" transform="translate(6 12)"/>
+    <!-- prislapp -->
+    <path d="M126 268 L196 180 H378 a26 26 0 0 1 26 26 V330 a26 26 0 0 1 -26 26 H196 Z" fill="url(#tag)"/>
+    <circle cx="186" cy="268" r="17" fill="#14231b"/>
+    <!-- spørsmålstegn -->
+    <path d="M268 236 a40 40 0 1 1 58 34 c-15 8 -22 16 -22 32" fill="none" stroke="#14231b" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="304" cy="334" r="16" fill="#14231b"/>
   </g>
+  <!-- snor -->
+  <path d="M189 290 C 150 250, 112 178, 150 118 C 162 100, 182 96, 196 104" fill="none" stroke="#fffdf8" stroke-width="9" stroke-linecap="round"/>
 </svg>

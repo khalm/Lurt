@@ -1,0 +1,45 @@
+# Publiserer appen på GitHub Pages og bygger inn prisnøkkelen fra repoets Secrets.
+# Krever: Settings → Pages → Source: «GitHub Actions».
+name: Publiser appen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bygg inn nøkkel/proxy fra Secrets
+        env:
+          KASSAL_KEY: ${{ secrets.KASSAL_KEY }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+        run: |
+          node -e '
+            const c = { apiKey: process.env.PROXY_URL ? "" : (process.env.KASSAL_KEY || ""), proxy: process.env.PROXY_URL || "" };
+            require("fs").writeFileSync("config.js", "window.LURT_CONFIG = " + JSON.stringify(c) + ";\n");
+            console.log("Nøkkel:", c.apiKey ? "ja" : "nei", "| Proxy:", c.proxy ? "ja" : "nei");
+          '
+          rm -rf .github worker.js
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4

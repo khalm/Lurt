@@ -1,4 +1,6 @@
-# Lurt? 🛒
+# Lurt? 🏷️
+
+<img src="icon-512.png" width="96" alt="Lurt?-logo">
 
 Er kjøpet lurt – eller blir du lurt? Skann en vare i butikken og få svaret.
 
@@ -20,16 +22,20 @@ Er kjøpet lurt – eller blir du lurt? Skann en vare i butikken og få svaret.
    - Nærmeste butikk i den billigste kjeden
 4. **Følg prisen** på varer du kjøper ofte, og se om de har blitt billigere neste gang du åpner appen.
 
-## Første gang: gratis nøkkel (2 min)
-Prisene kommer fra [Kassalapp](https://kassal.app), som samler priser fra norske dagligvarekjeder. Det er gratis for privat bruk:
-1. Gå til [kassal.app/profil/api](https://kassal.app/profil/api) og lag en gratis konto.
-2. Lag en API-nøkkel og kopier den.
-3. I Lurt?: **Innstillinger → lim inn → Lagre og test**.
+## Prisdata: bygg inn nøkkelen én gang (brukerne slipper)
+Prisene kommer fra [Kassalapp](https://kassal.app) (gratis for privat bruk). Nøkkelen legges inn **én gang i GitHub**, så bygges den inn i appen automatisk:
+1. Hent nøkkel på [kassal.app/profil/api](https://kassal.app/profil/api).
+2. I repoet: **Settings → Secrets and variables → Actions → New repository secret**. Navn: `KASSAL_KEY`, verdi: nøkkelen.
+3. **Settings → Pages → Source: GitHub Actions** (én gang).
+4. **Actions → Publiser appen → Run workflow** (eller bare gjør en endring).
 
-Nøkkelen lagres bare på telefonen din. Uten nøkkel kan du trykke «Prøv med eksempeldata» for å se hvordan appen ser ut.
+Nøkkelen ligger da ikke i koden i repoet, men den kan sees av noen som graver i den publiserte siden. For å skjule den helt: sett opp gratis Cloudflare-proxy (`worker.js`) med nøkkelen som secret der, og legg adressen inn som GitHub-secret `PROXY_URL` i stedet.
+
+Den som vil, kan fortsatt bruke egen nøkkel under **Innstillinger**. Uten nøkkel kan du trykke «Prøv med eksempeldata».
 
 ## Installer på telefonen
-- **Android (Chrome):** åpne lenken → ⋮ → **Installer app**.
+- **Android (Chrome):** åpne lenken → ⋮ → **Installer app**. På Pixel havner nye apper i **appskuffen** (sveip opp), ikke automatisk på hjemskjermen.
+  - Sier Chrome «This app is already installed» uten at du finner den: sveip opp og søk «Lurt». Finnes den ikke, gå til Innstillinger → Apper → Lurt? → Avinstaller, og installer på nytt.
 - **iPhone (Safari):** åpne lenken → Del → **Legg til på Hjem-skjerm**.
 
 ## Helt gratis
@@ -54,4 +60,6 @@ Ren HTML/CSS/JavaScript uten byggesteg, hostet på GitHub Pages. Kan redigeres r
 - `scan.js` – kamera, strekkodeleser og lesing av hyllelapper
 - `style.css` – utseende
 - `sw.js`, `manifest.json` – installerbar app som åpner uten nett
+- `config.js` – innebygd nøkkel/proxy (skrives av `.github/workflows/pages.yml`)
+- `icon.svg` – logo (PNG-ikonene er laget fra den)
 - `worker.js` – valgfri proxy

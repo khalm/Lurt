@@ -1,6 +1,8 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
+const APP_VERSION = '1.1.0';
+
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -75,7 +77,7 @@ function getLocation() {
 async function autoStore() {
   const saved = JSON.parse(sessionStorage.getItem('lurt.chain') || 'null');
   if (saved) { setChain(saved.chain, saved.label); }
-  if (settings().autoStore === false || !settings().apiKey) return;
+  if (settings().autoStore === false || !API.access().ready) return;
   const loc = await getLocation();
   if (!loc) return;
   state.loc = loc;
@@ -93,7 +95,7 @@ async function openStoreDlg() {
     `<button class="chip ${k === state.chain ? 'on' : ''}" value="${k}" data-chain="${k}">${esc(n)}</button>`).join('');
   $('#nearList').innerHTML = '<p class="muted small">Finner butikker i nærheten …</p>';
   dlg.showModal();
-  if (!settings().apiKey) { $('#nearList').innerHTML = ''; return; }
+  if (!API.access().ready) { $('#nearList').innerHTML = ''; return; }
   const loc = state.loc || await getLocation();
   if (!loc) { $('#nearList').innerHTML = '<p class="muted small">Fikk ikke tak i posisjonen.</p>'; return; }
   state.loc = loc;
@@ -493,7 +495,17 @@ function loadSettingsForm() {
   $('#apiKey').value = s.apiKey || '';
   $('#proxy').value = s.proxy || '';
   $('#autoStore').checked = s.autoStore !== false;
+  const bi = API.builtIn();
+  $('#builtinKey').classList.toggle('hidden', !bi);
+  $('#ownKeyCard').open = !bi || !!s.apiKey;
+  $('#ownKeyCard summary h3').textContent = bi ? 'Bruk egen API-nøkkel (valgfritt)' : 'API-nøkkel';
 }
+$('#testBuiltin').addEventListener('click', async () => {
+  const st = $('#builtinStatus');
+  st.textContent = 'Tester …'; st.className = 'small';
+  try { await API.test(); st.textContent = '✅ Det virker!'; st.className = 'small good'; }
+  catch (e) { st.innerHTML = '❌ ' + apiErrorText(e); st.className = 'small bad'; }
+});
 $('#saveKey').addEventListener('click', async () => {
   saveSettings({ apiKey: $('#apiKey').value.trim() });
   const st = $('#keyStatus');
@@ -511,12 +523,20 @@ $('#clearHist').addEventListener('click', () => { store.set('history', []); aler
 
 // ---------- Oppstart ----------
 function refreshDemoBtn() {
-  const hasKey = !!settings().apiKey;
+  const hasKey = API.access().ready;
   $('#demoBtn').classList.toggle('hidden', hasKey);
   if (!hasKey) status('For å hente ekte priser trenger du en gratis nøkkel fra Kassalapp. <a href="#" data-go-settings>Sett opp (2 min)</a>', 'info');
   else status('');
 }
 $('#demoBtn').addEventListener('click', () => { if (!state.chain) setChain('kiwi', 'Kiwi (demo)'); openEan(API.DEMO_EAN); });
+
+// Versjon og splash
+$$('[data-version]').forEach(el => el.textContent = 'v' + APP_VERSION);
+setTimeout(() => {
+  const sp = $('#splash');
+  sp.classList.add('out');
+  setTimeout(() => sp.remove(), 400);
+}, 1500);
 
 refreshDemoBtn();
 autoStore();
