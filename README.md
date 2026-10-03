@@ -11,6 +11,7 @@ Er kjøpet lurt – eller blir du lurt? Skann en vare i butikken og få svaret.
    - Strekkoden leses automatisk og er sikrest.
    - Fra hyllelappen leses også prisen (og eventuell «før»-pris).
    - Uten strekkode leses navnet, og du velger riktig vare fra en liste. Ordene appen fant vises som knapper du kan slå av og på.
+   - I **Vare**-modus kjenner appen også igjen varen på bildet: den gjetter varetypen (kaffe, pizza, melk …) og sammenligner bildet med produktbildene, så den mest like havner øverst («👁️ Mest lik»).
    - Tips: gå nær så lappen fyller rammen, hold stødig (appen tar flere bilder og velger det skarpeste), og bruk 🔦 i dårlig lys.
 2. **Butikken** du står i finnes automatisk med GPS (eller velg selv øverst).
 3. Du får en **dom**: 😎 *Lurt kjøp!*, 🤔 *Helt grei pris* eller 🤡 *Du blir lurt!* – med begrunnelse:
@@ -43,6 +44,7 @@ Nøkkelen ligger ikke i koden i repoet, men kan finnes av noen som graver i den 
 Ingen betalte tjenester. Strekkoder og tekst leses **på telefonen**:
 - Strekkode: innebygd i Chrome på Android; på iPhone brukes [ZXing](https://github.com/Sec-ant/barcode-detector) (åpen kildekode).
 - Tekst på hyllelapp/emballasje: [Tesseract.js](https://github.com/naptha/tesseract.js) (lastes ned første gang, ca. 10 MB).
+- Bildegjenkjenning: [MobileCLIP S0](https://huggingface.co/Xenova/mobileclip_s0) via [Transformers.js](https://github.com/huggingface/transformers.js) (ca. 55 MB første gang, kan slås av i Innstillinger). Produktbildene hentes små via [wsrv.nl](https://wsrv.nl).
 - Priser og butikker: [Kassalapp API](https://kassal.app/api) (gratis «Hobby»-nivå: 60 oppslag i minuttet). Svar lagres i 6 timer, så samme vare koster ikke nye oppslag.
 
 ## Begrensninger
@@ -59,6 +61,7 @@ Ren HTML/CSS/JavaScript uten byggesteg, hostet på GitHub Pages. Kan redigeres r
 - `api.js` – Kassalapp-oppslag, lagring og kjeder
 - `verdict.js` – regnestykket bak «Lurt?»-dommen (poeng, falske tilbud, før-pris)
 - `scan.js` – kamera, strekkodeleser og lesing av hyllelapper
+- `vision.js` – gjenkjenning av varer på bilde
 - `style.css` – utseende
 - `sw.js`, `manifest.json` – installerbar app som åpner uten nett
 - `config.js` – innebygd nøkkel/proxy (skrives av `.github/workflows/pages.yml`)

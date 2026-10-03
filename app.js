@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -237,18 +237,36 @@ async function analyzeImage(canvas, knownEan, crop) {
     const isLabel = state.mode === 'label';
     // Har vi strekkoden, trengs tekst bare for å lese prisen på hyllelappen
     if (ean && !isLabel) { status(''); return openEan(ean); }
-    status('Leser teksten i bildet … (første gang lastes en leser ned, ca. 10 MB)');
+    // Vare-modus: gjenkjenn varen på bildet (parallelt med tekstlesing)
+    let visualP = null;
+    if (state.mode === 'product' && Vision.enabled() && await visionOk()) {
+      visualP = (async () => {
+        await Vision.load((f, total) => status(`Laster ned bildegjenkjenning (første gang, ca. ${Math.round(total / 1e6)} MB) … ${Math.round(f * 100)} %`));
+        const emb = await Vision.embedCanvas(crop || canvas);
+        return { emb, cats: Vision.classify(emb) };
+      })().catch((e) => {
+        console.warn('Bildegjenkjenning feilet', e);
+        try { localStorage.setItem('lurt.vision.err', String(e && e.message || e).slice(0, 200)); } catch { /* */ }
+        return { failed: true };
+      });
+    }
+    status('Leser teksten i bildet …');
     const res = await Scan.ocr(crop || canvas, (s, p) => {
       if (/loading|initializ/i.test(s)) status('Gjør klar tekstleser … ' + (p ? Math.round(p * 100) + ' %' : ''));
-      if (/recogniz/i.test(s)) status('Leser teksten …');
     });
     const read = Label.parse(res);
     const finalEan = ean || read.ean;
-    status('');
     if (finalEan) {
+      status('');
       return openEan(finalEan, { shelfPrice: isLabel ? read.price : null, claimedBefore: isLabel ? read.before : null });
     }
-    if (!read.words.length) {
+    if (visualP) {
+      status('Kjenner igjen varen …');
+      const v = await visualP;
+      if (v && v.failed) read.visionFailed = true; else { read.visual = v; localStorage.removeItem('lurt.vision.err'); }
+    }
+    status('');
+    if (!read.words.length && !(read.visual && read.visual.cats.length)) {
       status(state.mode === 'product'
         ? 'Fant ingen tydelig tekst. Snu varen så strekkoden synes – det er sikrest. Eller ta bildet nærmere, med merke og navn i rammen.'
         : 'Fant ingen tydelig tekst. Gå nærmere så lappen fyller rammen, og unngå gjenskinn.', 'bad');
@@ -259,6 +277,15 @@ async function analyzeImage(canvas, knownEan, crop) {
   } catch (e) {
     status(e.code ? apiErrorText(e) : 'Klarte ikke å lese bildet: ' + esc(e.message), 'bad');
   } finally { state.busy = false; }
+}
+
+async function visionOk() {
+  if (Vision.downloaded() || Vision.ready()) return true;
+  const c = navigator.connection || {};
+  if (c.saveData || c.type === 'cellular') {
+    return confirm(`Bildegjenkjenning lastes ned første gang (ca. ${Vision.MODEL_MB} MB) og lagres på telefonen.\n\nDu ser ut til å være på mobildata. Laste ned nå?`);
+  }
+  return true;
 }
 
 // Manuelt søk / strekkode
@@ -272,7 +299,7 @@ $('#manual').addEventListener('submit', (e) => {
 });
 
 // ---------- Velg vare ----------
-let pendingRead = null, chosenWords = [];
+let pendingRead = null, chosenWords = [], pendingVisual = null;
 async function showPick(read, isLabel) {
   pendingRead = isLabel ? read : null;
   go('pick');
@@ -283,6 +310,13 @@ async function showPick(read, isLabel) {
     bits.push(`Lest fra lappen: <b>${read.price ? kr(read.price) : '–'}</b>${read.before ? ` · før ${kr(read.before)}` : ''}${read.offer ? ' · <span class="tag">tilbud</span>' : ''}`);
   }
   chosenWords = read.manual ? [] : read.words.slice(0, 3);
+  pendingVisual = read.visual || null;
+  const catTerms = pendingVisual ? pendingVisual.cats.filter(c => c.p > 0.12).map(c => c.term).slice(0, 3) : [];
+  if (read.visionFailed) bits.push('<span class="small muted">⚠️ Bildegjenkjenningen virket ikke denne gangen – viser treff fra teksten.</span>');
+  if (catTerms.length) {
+    bits.push(`<span class="small muted">👁️ Ser ut som:</span><div class="chips words">${
+      catTerms.map(t => `<button class="chip cat" data-word="${esc(t)}">${esc(t)}</button>`).join('')}</div>`);
+  }
   if (read.words.length) {
     bits.push(`<span class="small muted">Ord i bildet – trykk for å velge hvilke det skal søkes på:</span><div class="chips words">${
       read.words.map(w => `<button class="chip ${chosenWords.includes(w) ? 'on' : ''}" data-word="${esc(w)}">${esc(w)}</button>`).join('')}</div>`);
@@ -290,12 +324,13 @@ async function showPick(read, isLabel) {
   lr.classList.toggle('hidden', !bits.length);
   lr.innerHTML = bits.map(b => `<div class="rd">${b}</div>`).join('');
   $('#refineInput').value = read.manual ? read.query : chosenWords.join(' ');
-  await runSearch(read.manual ? read.query : null, read.manual ? [] : read.words);
+  await runSearch(read.manual ? read.query : null, read.manual ? [] : read.words, catTerms);
 }
 $('#labelRead').addEventListener('click', (e) => {
   const b = e.target.closest('[data-word]');
   if (!b) return;
   const w = b.dataset.word;
+  if (b.classList.contains('cat')) { $('#refineInput').value = w; return runSearch(null, chosenWords, [w]); }
   chosenWords = chosenWords.includes(w) ? chosenWords.filter(x => x !== w) : [...chosenWords, w];
   b.classList.toggle('on', chosenWords.includes(w));
   const q = chosenWords.join(' ');
@@ -318,7 +353,7 @@ function matchScore(p, words) {
 }
 
 let searchSeq = 0;
-async function runSearch(q, words = []) {
+async function runSearch(q, words = [], catTerms = []) {
   const ul = $('#pickList');
   const seq = ++searchSeq;
   ul.innerHTML = '<li class="muted">Søker …</li>';
@@ -328,9 +363,11 @@ async function runSearch(q, words = []) {
   try {
     const add = (list) => { for (const p of list) { const e = found.get(p.ean); if (e) e.hits++; else found.set(p.ean, { ...p, hits: 1 }); } };
     for (const qq of queries.slice(0, 4)) {
-      add(await API.search(qq));
-      if (found.size >= 6) break;
+      add(await API.search(qq, pendingVisual ? 25 : 15));
+      if (found.size >= (pendingVisual ? 12 : 6)) break;
     }
+    // Varetype fra bildegjenkjenningen gir flere kandidater å sammenligne bildene med
+    if (!q && pendingVisual) for (const t of catTerms.slice(0, 2)) add(await API.search(t, 30));
     // Ingen treff? Søk på starten av de lengste ordene (f.eks. «Grandios» → «grand»)
     if (!found.size && !q) {
       const stems = [...new Set(words.filter(w => w.length >= 5).map(w => w.slice(0, 5).toLowerCase()))].slice(0, 2);
@@ -338,16 +375,28 @@ async function runSearch(q, words = []) {
     }
     if (seq !== searchSeq) return;
     const scoreWords = words.length ? words : (q || '').split(/\s+/);
-    const list = [...found.values()]
-      .map(p => ({ ...p, score: matchScore(p, scoreWords) * 2 + p.hits }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 15);
+    let list = [...found.values()].map(p => ({ ...p, score: matchScore(p, scoreWords) * 2 + p.hits }));
+    // Sammenlign bildet med produktbildene og la likheten veie tungt
+    if (pendingVisual && list.some(p => p.image)) {
+      list.sort((a, b) => b.score - a.score);
+      list = list.slice(0, 36);
+      const n = list.filter(p => p.image).length;
+      ul.innerHTML = `<li class="muted">👁️ Sammenligner med ${n} produktbilder …</li>`;
+      await Vision.rank(pendingVisual.emb, list, (d) => { if (seq === searchSeq) ul.innerHTML = `<li class="muted">👁️ Sammenligner med produktbilder … ${d}/${n}</li>`; });
+      if (seq !== searchSeq) return;
+      const sims = list.map(p => p.sim).filter(x => x != null).sort((a, b) => a - b);
+      const med = sims.length ? sims[sims.length >> 1] : 0;
+      for (const p of list) if (p.sim != null) p.score += 40 * (p.sim - med);
+    }
+    list = list.sort((a, b) => b.score - a.score).slice(0, 15);
+    const simSorted = list.filter(p => p.sim != null).sort((a, b) => b.sim - a.sim);
+    const bestVisual = simSorted.length > 1 && simSorted[0].sim - simSorted[1].sim > 0.03 && list[0] === simSorted[0] ? list[0].ean : null;
     if (!list.length) { ul.innerHTML = '<li class="muted">Ingen treff. Velg andre ord over, eller skriv merke + type (f.eks. «tine melk»).</li>'; return; }
     ul.innerHTML = list.map(p => {
       const lo = p.prices.length ? Math.min(...p.prices) : null;
       return `<li><button class="item" data-ean="${esc(p.ean)}">
         ${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<div class="noimg">🛒</div>'}
-        <div><b>${esc(p.name)}</b><span class="muted small">${esc(p.brand)}${lo != null ? ' · fra ' + kr(lo) : ''}</span></div>
+        <div>${p.ean === bestVisual ? '<span class="tag">👁️ Mest lik</span> ' : ''}<b>${esc(p.name)}</b><span class="muted small">${esc(p.brand)}${lo != null ? ' · fra ' + kr(lo) : ''}${p.sim != null ? ' · ' + Math.round(p.sim * 100) + ' % lik' : ''}</span></div>
       </button></li>`;
     }).join('');
   } catch (e) { if (seq === searchSeq) ul.innerHTML = `<li class="status bad">${apiErrorText(e)}</li>`; }
@@ -593,7 +642,11 @@ function camInfoText() {
   if (i.macroId) return '🔬 Makro-/nærfokuslinse funnet. Den brukes automatisk på hyllelapper (bytt med «Nær»-knappen).';
   return `Nettleseren gir tilgang til ${i.back || 1} bakkamera${(i.back || 1) > 1 ? 'er' : ''}, men ingen egen makrolinse. Ved nærbilder zoomes det inn i stedet, så du kan holde telefonen litt unna.`;
 }
+$('#visionOn').addEventListener('change', (e) => saveSettings({ vision: e.target.checked }));
 function loadSettingsForm() {
+  $('#visionOn').checked = Vision.enabled();
+  const verr = localStorage.getItem('lurt.vision.err');
+  $('#visionInfo').textContent = verr ? 'Siste feil: ' + verr : Vision.downloaded() ? 'Lastet ned og klar.' : `Lastes ned første gang du tar bilde av en vare (ca. ${Vision.MODEL_MB} MB, bruk gjerne Wi-Fi).`;
   $('#camInfo').textContent = camInfoText();
   $('#autoStore').checked = settings().autoStore !== false;
   $('#dataStatus').innerHTML = API.access().ready

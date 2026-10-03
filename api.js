@@ -152,7 +152,7 @@ const API = (() => {
   }
 
   // Fritekstsøk → liste med unike varer (gruppert på EAN)
-  async function search(q) {
+  async function search(q, limit = 15) {
     const json = await get('/products?size=40&search=' + encodeURIComponent(q));
     const list = (json && json.data) || [];
     const byEan = new Map();
@@ -164,7 +164,7 @@ const API = (() => {
       if (pr != null) e.prices.push(pr);
       byEan.set(p.ean, e);
     }
-    return [...byEan.values()].slice(0, 15);
+    return [...byEan.values()].slice(0, limit);
   }
 
   // Butikker i nærheten (for å finne hvilken kjede du står i)

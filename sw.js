@@ -1,6 +1,6 @@
 // sw.js — gjør appen installerbar og lar den åpne uten nett
-const VERSION = 'lurt-1.4.0';
-const CORE = ['./', 'index.html', 'style.css', 'config.js', 'app.js', 'api.js', 'verdict.js', 'scan.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-48.png'];
+const VERSION = 'lurt-1.5.0';
+const CORE = ['./', 'index.html', 'style.css', 'config.js', 'app.js', 'api.js', 'verdict.js', 'scan.js', 'vision.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-48.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
