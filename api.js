@@ -141,6 +141,7 @@ const API = (() => {
       const d = json.data;
       const products = Array.isArray(d) ? d : (d.products || []);
       const prod = normProduct(d.ean || ean, products);
+      if (prod && typeof Brands !== 'undefined') Brands.learn([prod.brand]);
       if (prod) cacheSet('ean.' + ean, prod);
       return prod;
     } catch (e) {
@@ -164,6 +165,7 @@ const API = (() => {
       if (pr != null) e.prices.push(pr);
       byEan.set(p.ean, e);
     }
+    if (typeof Brands !== 'undefined') Brands.learn(list.map(p => p.brand));
     return [...byEan.values()].slice(0, limit);
   }
 

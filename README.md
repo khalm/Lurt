@@ -12,6 +12,8 @@ Er kjøpet lurt – eller blir du lurt? Skann en vare i butikken og få svaret.
    - Fra hyllelappen leses også prisen (og eventuell «før»-pris).
    - Uten strekkode leses navnet, og du velger riktig vare fra en liste. Ordene appen fant vises som knapper du kan slå av og på.
    - I **Vare**-modus kjenner appen også igjen varen på bildet: den gjetter varetypen (kaffe, pizza, melk …) og sammenligner bildet med produktbildene, så den mest like havner øverst («👁️ Mest lik»).
+   - Appen kjenner ~400 norske varemerker (Tine, Gilde, Stabburet, Grandiosa …) og lærer flere fra prisdataene. Feilleste merker rettes («Grandios» → «Grandiosa»), og det søkes på merke + varetype.
+   - Den **pugger** varer du tar bilde av og velger, så neste gang kjenner den dem igjen («⭐ Kjent fra før»). Alt lagres bare på telefonen.
    - Tips: gå nær så lappen fyller rammen, hold stødig (appen tar flere bilder og velger det skarpeste), og bruk 🔦 i dårlig lys.
 2. **Butikken** du står i finnes automatisk med GPS (eller velg selv øverst).
 3. Du får en **dom**: 😎 *Lurt kjøp!*, 🤔 *Helt grei pris* eller 🤡 *Du blir lurt!* – med begrunnelse:
@@ -61,7 +63,8 @@ Ren HTML/CSS/JavaScript uten byggesteg, hostet på GitHub Pages. Kan redigeres r
 - `api.js` – Kassalapp-oppslag, lagring og kjeder
 - `verdict.js` – regnestykket bak «Lurt?»-dommen (poeng, falske tilbud, før-pris)
 - `scan.js` – kamera, strekkodeleser og lesing av hyllelapper
-- `vision.js` – gjenkjenning av varer på bilde
+- `vision.js` – gjenkjenning av varer på bilde, og pugging av varer du har valgt
+- `brands.js` – liste over varemerker (rediger fritt for å legge til flere)
 - `style.css` – utseende
 - `sw.js`, `manifest.json` – installerbar app som åpner uten nett
 - `config.js` – innebygd nøkkel/proxy (skrives av `.github/workflows/pages.yml`)

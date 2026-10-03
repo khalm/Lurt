@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -255,6 +255,10 @@ async function analyzeImage(canvas, knownEan, crop) {
       if (/loading|initializ/i.test(s)) status('Gjør klar tekstleser … ' + (p ? Math.round(p * 100) + ' %' : ''));
     });
     const read = Label.parse(res);
+    const bd = Brands.detect(read.words);
+    read.brands = bd.brands;
+    // Merket først, så resten av ordene
+    read.words = [...bd.brands, ...bd.words.filter(w => !bd.brands.includes(w))].slice(0, 8);
     const finalEan = ean || read.ean;
     if (finalEan) {
       status('');
@@ -299,7 +303,7 @@ $('#manual').addEventListener('submit', (e) => {
 });
 
 // ---------- Velg vare ----------
-let pendingRead = null, chosenWords = [], pendingVisual = null;
+let pendingRead = null, chosenWords = [], pendingVisual = null, pendingBrands = [], shownList = new Map();
 async function showPick(read, isLabel) {
   pendingRead = isLabel ? read : null;
   go('pick');
@@ -311,6 +315,7 @@ async function showPick(read, isLabel) {
   }
   chosenWords = read.manual ? [] : read.words.slice(0, 3);
   pendingVisual = read.visual || null;
+  pendingBrands = read.brands || [];
   const catTerms = pendingVisual ? pendingVisual.cats.filter(c => c.p > 0.12).map(c => c.term).slice(0, 3) : [];
   if (read.visionFailed) bits.push('<span class="small muted">⚠️ Bildegjenkjenningen virket ikke denne gangen – viser treff fra teksten.</span>');
   if (catTerms.length) {
@@ -319,7 +324,7 @@ async function showPick(read, isLabel) {
   }
   if (read.words.length) {
     bits.push(`<span class="small muted">Ord i bildet – trykk for å velge hvilke det skal søkes på:</span><div class="chips words">${
-      read.words.map(w => `<button class="chip ${chosenWords.includes(w) ? 'on' : ''}" data-word="${esc(w)}">${esc(w)}</button>`).join('')}</div>`);
+      read.words.map(w => `<button class="chip ${chosenWords.includes(w) ? 'on' : ''}" data-word="${esc(w)}">${(read.brands || []).includes(w) ? '🏷️ ' : ''}${esc(w)}</button>`).join('')}</div>`);
   }
   lr.classList.toggle('hidden', !bits.length);
   lr.innerHTML = bits.map(b => `<div class="rd">${b}</div>`).join('');
@@ -358,7 +363,12 @@ async function runSearch(q, words = [], catTerms = []) {
   const seq = ++searchSeq;
   ul.innerHTML = '<li class="muted">Søker …</li>';
   // Prøv flere søk: alle ord, så færre, så enkeltord – stopp når vi har nok treff
-  const queries = q ? [q] : [...new Set([words.slice(0, 3).join(' '), words.slice(0, 2).join(' '), words[0], words[1], words[2]].filter(Boolean))];
+  const brand = !q && pendingBrands[0];
+  const rest = words.filter(w => !pendingBrands.includes(w));
+  const queries = q ? [q] : [...new Set((brand
+    ? [`${brand} ${rest[0] || ''}`, catTerms[0] && `${brand} ${catTerms[0]}`, `${brand} ${rest.slice(0, 2).join(' ')}`, brand]
+    : [words.slice(0, 3).join(' '), words.slice(0, 2).join(' '), words[0], words[1], words[2]]
+  ).map(x => x && x.trim()).filter(Boolean))];
   const found = new Map();
   try {
     const add = (list) => { for (const p of list) { const e = found.get(p.ean); if (e) e.hits++; else found.set(p.ean, { ...p, hits: 1 }); } };
@@ -375,7 +385,14 @@ async function runSearch(q, words = [], catTerms = []) {
     }
     if (seq !== searchSeq) return;
     const scoreWords = words.length ? words : (q || '').split(/\s+/);
-    let list = [...found.values()].map(p => ({ ...p, score: matchScore(p, scoreWords) * 2 + p.hits }));
+    let list = [...found.values()].map(p => ({ ...p, score: matchScore(p, scoreWords) * 2 + p.hits + (pendingBrands.some(b => Brands.isBrand(p, b)) ? 6 : 0) }));
+    // Varer du har tatt bilde av før og valgt (pugget på telefonen)
+    if (pendingVisual) {
+      for (const k of Vision.recall(pendingVisual.emb)) {
+        const ex = list.find(p => p.ean === k.ean);
+        if (ex) ex.known = k.sim; else list.push({ ...k, prices: [], hits: 0, score: 0, known: k.sim });
+      }
+    }
     // Sammenlign bildet med produktbildene og la likheten veie tungt
     if (pendingVisual && list.some(p => p.image)) {
       list.sort((a, b) => b.score - a.score);
@@ -388,7 +405,9 @@ async function runSearch(q, words = [], catTerms = []) {
       const med = sims.length ? sims[sims.length >> 1] : 0;
       for (const p of list) if (p.sim != null) p.score += 40 * (p.sim - med);
     }
+    for (const p of list) if (p.known) p.score += 20 + 100 * (p.known - 0.86);
     list = list.sort((a, b) => b.score - a.score).slice(0, 15);
+    shownList = new Map(list.map(p => [p.ean, p]));
     const simSorted = list.filter(p => p.sim != null).sort((a, b) => b.sim - a.sim);
     const bestVisual = simSorted.length > 1 && simSorted[0].sim - simSorted[1].sim > 0.03 && list[0] === simSorted[0] ? list[0].ean : null;
     if (!list.length) { ul.innerHTML = '<li class="muted">Ingen treff. Velg andre ord over, eller skriv merke + type (f.eks. «tine melk»).</li>'; return; }
@@ -396,7 +415,7 @@ async function runSearch(q, words = [], catTerms = []) {
       const lo = p.prices.length ? Math.min(...p.prices) : null;
       return `<li><button class="item" data-ean="${esc(p.ean)}">
         ${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<div class="noimg">🛒</div>'}
-        <div>${p.ean === bestVisual ? '<span class="tag">👁️ Mest lik</span> ' : ''}<b>${esc(p.name)}</b><span class="muted small">${esc(p.brand)}${lo != null ? ' · fra ' + kr(lo) : ''}${p.sim != null ? ' · ' + Math.round(p.sim * 100) + ' % lik' : ''}</span></div>
+        <div>${p.known ? '<span class="tag">⭐ Kjent fra før</span> ' : p.ean === bestVisual ? '<span class="tag">👁️ Mest lik</span> ' : ''}<b>${esc(p.name)}</b><span class="muted small">${esc(p.brand)}${lo != null ? ' · fra ' + kr(lo) : ''}${p.sim != null ? ' · ' + Math.round(p.sim * 100) + ' % lik' : ''}</span></div>
       </button></li>`;
     }).join('');
   } catch (e) { if (seq === searchSeq) ul.innerHTML = `<li class="status bad">${apiErrorText(e)}</li>`; }
@@ -404,6 +423,8 @@ async function runSearch(q, words = [], catTerms = []) {
 $('#pickList').addEventListener('click', (e) => {
   const b = e.target.closest('[data-ean]');
   if (!b) return;
+  const chosen = shownList.get(b.dataset.ean);
+  if (pendingVisual && chosen) Vision.remember(pendingVisual.emb, chosen);
   openEan(b.dataset.ean, { shelfPrice: pendingRead && pendingRead.price, claimedBefore: pendingRead && pendingRead.before });
 });
 
@@ -642,9 +663,11 @@ function camInfoText() {
   if (i.macroId) return '🔬 Makro-/nærfokuslinse funnet. Den brukes automatisk på hyllelapper (bytt med «Nær»-knappen).';
   return `Nettleseren gir tilgang til ${i.back || 1} bakkamera${(i.back || 1) > 1 ? 'er' : ''}, men ingen egen makrolinse. Ved nærbilder zoomes det inn i stedet, så du kan holde telefonen litt unna.`;
 }
+$('#forgetMem').addEventListener('click', () => { if (confirm('Glemme alle varer appen har pugget fra bildene dine?')) { Vision.forget(); loadSettingsForm(); } });
 $('#visionOn').addEventListener('change', (e) => saveSettings({ vision: e.target.checked }));
 function loadSettingsForm() {
   $('#visionOn').checked = Vision.enabled();
+  $('#memInfo').textContent = `Kjenner ${Brands.count()} varemerker · har pugget ${Vision.memCount()} ${Vision.memCount() === 1 ? 'vare' : 'varer'} fra bildene dine.`;
   const verr = localStorage.getItem('lurt.vision.err');
   $('#visionInfo').textContent = verr ? 'Siste feil: ' + verr : Vision.downloaded() ? 'Lastet ned og klar.' : `Lastes ned første gang du tar bilde av en vare (ca. ${Vision.MODEL_MB} MB, bruk gjerne Wi-Fi).`;
   $('#camInfo').textContent = camInfoText();

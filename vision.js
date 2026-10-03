@@ -136,5 +136,25 @@ const Vision = (() => {
     return items;
   }
 
-  return { load, ready, enabled, downloaded, embedCanvas, classify, rank, MODEL_MB: 55 };
+  // ---- Pugging: varer du har tatt bilde av og valgt, huskes på telefonen ----
+  const MEM_KEY = 'lurt.vision.mem.' + VER;
+  const memAll = () => { try { return JSON.parse(localStorage.getItem(MEM_KEY) || '[]'); } catch { return []; } };
+  function remember(emb, p) {
+    let mem = memAll().filter(m => !(m.ean === p.ean && dot(m.e, emb) > 0.97)); // ikke lagre nesten like bilder dobbelt
+    mem.unshift({ ean: p.ean, name: p.name, brand: p.brand || '', image: p.image || null, e: emb.map(x => +x.toFixed(3)), t: Date.now() });
+    mem = mem.slice(0, 200);
+    try { localStorage.setItem(MEM_KEY, JSON.stringify(mem)); } catch { mem.length = 100; try { localStorage.setItem(MEM_KEY, JSON.stringify(mem)); } catch { /* */ } }
+  }
+  function recall(emb, min = 0.86) {
+    const best = new Map();
+    for (const m of memAll()) {
+      const s = dot(emb, m.e);
+      if (s >= min && (!best.has(m.ean) || best.get(m.ean).sim < s)) best.set(m.ean, { ean: m.ean, name: m.name, brand: m.brand, image: m.image, sim: s, known: true });
+    }
+    return [...best.values()].sort((a, b) => b.sim - a.sim).slice(0, 3);
+  }
+  const memCount = () => new Set(memAll().map(m => m.ean)).size;
+  const forget = () => localStorage.removeItem(MEM_KEY);
+
+  return { load, ready, enabled, downloaded, embedCanvas, classify, rank, remember, recall, memCount, forget, MODEL_MB: 55 };
 })();
