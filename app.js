@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -45,10 +45,10 @@ function status(msg, kind = '') {
 
 function apiErrorText(e) {
   switch (e.code) {
-    case 'nokey': return 'Du må legge inn en gratis API-nøkkel først. <a href="#" data-go-settings>Gå til innstillinger</a>';
-    case 'auth': return 'API-nøkkelen ble avvist. Sjekk den i <a href="#" data-go-settings>innstillinger</a>.';
+    case 'nokey': return 'Prisdata er ikke koblet til ennå.';
+    case 'auth': return 'Kassalapp avviste tilgangen. Prøv igjen senere.';
     case 'offline': return 'Du er uten nett. Varer du har sett før vises fortsatt.';
-    case 'network': return 'Fikk ikke kontakt med Kassalapp. Prøv igjen – hvis det fortsetter, se «Avansert: proxy» i <a href="#" data-go-settings>innstillinger</a>.';
+    case 'network': return 'Fikk ikke kontakt med Kassalapp. Sjekk nettet og prøv igjen.';
     default: return esc(e.message || 'Noe gikk galt');
   }
 }
@@ -491,32 +491,38 @@ async function renderSaved() {
 
 // ---------- Innstillinger ----------
 function loadSettingsForm() {
-  const s = settings();
-  $('#apiKey').value = s.apiKey || '';
-  $('#proxy').value = s.proxy || '';
-  $('#autoStore').checked = s.autoStore !== false;
-  const bi = API.builtIn();
-  $('#builtinKey').classList.toggle('hidden', !bi);
-  $('#ownKeyCard').open = !bi || !!s.apiKey;
-  $('#ownKeyCard summary h3').textContent = bi ? 'Bruk egen API-nøkkel (valgfritt)' : 'API-nøkkel';
+  $('#autoStore').checked = settings().autoStore !== false;
+  $('#dataStatus').innerHTML = API.access().ready
+    ? '✅ Priser hentes fra <a href="https://kassal.app" target="_blank" rel="noopener">Kassalapp</a>. Du trenger ikke gjøre noe.'
+    : '⚠️ Appen er ikke koblet til prisdata ennå. Prøv igjen senere – i mellomtiden kan du se eksempeldata.';
 }
-$('#testBuiltin').addEventListener('click', async () => {
-  const st = $('#builtinStatus');
+$('#testConn').addEventListener('click', async () => {
+  const st = $('#connStatus');
   st.textContent = 'Tester …'; st.className = 'small';
   try { await API.test(); st.textContent = '✅ Det virker!'; st.className = 'small good'; }
   catch (e) { st.innerHTML = '❌ ' + apiErrorText(e); st.className = 'small bad'; }
 });
-$('#saveKey').addEventListener('click', async () => {
-  saveSettings({ apiKey: $('#apiKey').value.trim() });
-  const st = $('#keyStatus');
-  st.textContent = 'Tester …'; st.className = 'small';
-  try {
-    await API.test();
-    st.textContent = '✅ Det virker! Gå til Skann og prøv en vare.'; st.className = 'small good';
-    refreshDemoBtn(); autoStore();
-  } catch (e) { st.innerHTML = '❌ ' + apiErrorText(e); st.className = 'small bad'; }
+
+// ---------- Installering ----------
+let installEvt = null;
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); installEvt = e;
+  if (!standalone()) { $('#installCard').classList.remove('hidden'); $('#installTop').classList.remove('hidden'); }
 });
-$('#saveProxy').addEventListener('click', () => { saveSettings({ proxy: $('#proxy').value.trim() }); alert('Lagret'); });
+window.addEventListener('appinstalled', () => {
+  installEvt = null;
+  $('#installCard').classList.add('hidden'); $('#installTop').classList.add('hidden');
+});
+async function doInstall() {
+  if (!installEvt) return;
+  installEvt.prompt();
+  await installEvt.userChoice;
+  installEvt = null;
+  $('#installCard').classList.add('hidden'); $('#installTop').classList.add('hidden');
+}
+$('#installBtn').addEventListener('click', doInstall);
+$('#installTop').addEventListener('click', doInstall);
 $('#autoStore').addEventListener('change', (e) => saveSettings({ autoStore: e.target.checked }));
 $('#clearCache').addEventListener('click', () => { API.clearCache(); alert('Lagrede priser er slettet.'); });
 $('#clearHist').addEventListener('click', () => { store.set('history', []); alert('Historikken er slettet.'); });
@@ -525,7 +531,7 @@ $('#clearHist').addEventListener('click', () => { store.set('history', []); aler
 function refreshDemoBtn() {
   const hasKey = API.access().ready;
   $('#demoBtn').classList.toggle('hidden', hasKey);
-  if (!hasKey) status('For å hente ekte priser trenger du en gratis nøkkel fra Kassalapp. <a href="#" data-go-settings>Sett opp (2 min)</a>', 'info');
+  if (!hasKey) status('Prisdata er ikke koblet til ennå. Du kan prøve appen med eksempeldata.', 'info');
   else status('');
 }
 $('#demoBtn').addEventListener('click', () => { if (!state.chain) setChain('kiwi', 'Kiwi (demo)'); openEan(API.DEMO_EAN); });

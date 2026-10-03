@@ -28,15 +28,14 @@ const API = (() => {
   const chainName = (key) => (CHAINS.find(c => c[0] === key) || [null, null])[1];
 
   // ---------- HTTP ----------
-  // Brukerens egen nøkkel/proxy vinner; ellers brukes det som er bygget inn i appen.
+  // Nøkkel/proxy er bygget inn i appen (config.js, skrives ved publisering)
   function access() {
-    const s = settings(), c = window.LURT_CONFIG || {};
-    const ownKey = (s.apiKey || '').trim(), ownProxy = (s.proxy || '').trim();
-    const key = ownKey || (ownProxy ? '' : (c.apiKey || '').trim());
-    const proxy = ownProxy || (ownKey ? '' : (c.proxy || '').trim());
-    return { key, proxy, own: !!(ownKey || ownProxy), ready: !!(key || proxy) };
+    const c = window.LURT_CONFIG || {};
+    const proxy = (c.proxy || '').trim();
+    const key = proxy ? '' : (c.apiKey || '').trim();
+    return { key, proxy, ready: !!(key || proxy) };
   }
-  const builtIn = () => { const c = window.LURT_CONFIG || {}; return !!((c.apiKey || '').trim() || (c.proxy || '').trim()); };
+  const builtIn = () => access().ready;
 
   async function get(path) {
     const a = access();

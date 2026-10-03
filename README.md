@@ -29,9 +29,9 @@ Prisene kommer fra [Kassalapp](https://kassal.app) (gratis for privat bruk). Nø
 3. **Settings → Pages → Source: GitHub Actions** (én gang).
 4. **Actions → Publiser appen → Run workflow** (eller bare gjør en endring).
 
-Nøkkelen ligger da ikke i koden i repoet, men den kan sees av noen som graver i den publiserte siden. For å skjule den helt: sett opp gratis Cloudflare-proxy (`worker.js`) med nøkkelen som secret der, og legg adressen inn som GitHub-secret `PROXY_URL` i stedet.
+Brukerne ser aldri noe til nøkkelen. Etter publisering viser `build-info.json` om nøkkelen ble funnet (`priceData: true`).
 
-Den som vil, kan fortsatt bruke egen nøkkel under **Innstillinger**. Uten nøkkel kan du trykke «Prøv med eksempeldata».
+Nøkkelen ligger ikke i koden i repoet, men kan finnes av noen som graver i den publiserte siden. For å skjule den helt kan eieren av repoet sette opp gratis Cloudflare-proxy (`worker.js`) og legge adressen inn som secret `PROXY_URL` i stedet.
 
 ## Installer på telefonen
 - **Android (Chrome):** åpne lenken → ⋮ → **Installer app**. På Pixel havner nye apper i **appskuffen** (sveip opp), ikke automatisk på hjemskjermen.

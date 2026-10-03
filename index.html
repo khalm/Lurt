@@ -61,6 +61,7 @@
 
       <div id="status" class="status hidden"></div>
       <button id="demoBtn" class="link hidden" type="button">Prøv med eksempeldata</button>
+      <button id="installTop" class="btn primary wide hidden" type="button">📲 Installer Lurt? på telefonen</button>
       <p class="version muted small center">Lurt? <span data-version></span></p>
     </section>
 
@@ -94,42 +95,23 @@
     <!-- INNSTILLINGER -->
     <section id="scr-settings" class="screen">
       <h2>Innstillinger</h2>
-      <div class="card hidden" id="builtinKey">
-        <h3>Prisdata</h3>
-        <p class="small">✅ Appen er satt opp med prisdata fra <a href="https://kassal.app" target="_blank" rel="noopener">Kassalapp</a> – du trenger ikke gjøre noe.</p>
-        <button id="testBuiltin" class="btn" type="button">Test tilkoblingen</button>
-        <p id="builtinStatus" class="small"></p>
+      <div class="card hidden" id="installCard">
+        <h3>Installer appen</h3>
+        <p class="small">Legg Lurt? på hjemskjermen, så åpnes den som en vanlig app.</p>
+        <button id="installBtn" class="btn primary" type="button">📲 Installer Lurt?</button>
       </div>
 
-      <details class="card" id="ownKeyCard" open>
-        <summary><h3>Egen API-nøkkel</h3></summary>
-        <p class="small" id="ownKeyIntro">Lurt? henter priser fra <a href="https://kassal.app" target="_blank" rel="noopener">Kassalapp</a>, som samler priser fra norske dagligvarekjeder. Det er gratis for privat bruk, men du trenger en egen nøkkel:</p>
-        <ol class="small steps">
-          <li>Åpne <a href="https://kassal.app/profil/api" target="_blank" rel="noopener">kassal.app/profil/api</a> og logg inn (gratis konto).</li>
-          <li>Lag en ny API-nøkkel og kopier den.</li>
-          <li>Lim den inn her og trykk <b>Lagre og test</b>.</li>
-        </ol>
-        <label class="field">API-nøkkel
-          <input id="apiKey" type="password" autocomplete="off" placeholder="Lim inn nøkkelen">
-        </label>
-        <button id="saveKey" class="btn primary" type="button">Lagre og test</button>
-        <p id="keyStatus" class="small"></p>
-        <p class="muted small">Nøkkelen lagres bare på denne telefonen.</p>
-      </details>
+      <div class="card">
+        <h3>Prisdata</h3>
+        <p class="small" id="dataStatus"></p>
+        <button id="testConn" class="btn" type="button">Test tilkoblingen</button>
+        <p id="connStatus" class="small"></p>
+      </div>
 
       <div class="card">
         <h3>Butikk</h3>
         <label class="check"><input id="autoStore" type="checkbox" checked> Finn butikken automatisk med GPS</label>
       </div>
-
-      <details class="card">
-        <summary><h3>Avansert: proxy</h3></summary>
-        <p class="small">Trengs bare hvis appen sier at den ikke når Kassalapp selv om du har nett. Se <code>worker.js</code> i repoet for en gratis Cloudflare-proxy.</p>
-        <label class="field">Proxy-adresse
-          <input id="proxy" type="url" placeholder="https://lurt-proxy.dittnavn.workers.dev">
-        </label>
-        <button id="saveProxy" class="btn" type="button">Lagre</button>
-      </details>
 
       <div class="card">
         <h3>Data</h3>

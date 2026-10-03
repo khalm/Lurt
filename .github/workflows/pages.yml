@@ -31,9 +31,14 @@ jobs:
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
           node -e '
-            const c = { apiKey: process.env.PROXY_URL ? "" : (process.env.KASSAL_KEY || ""), proxy: process.env.PROXY_URL || "" };
-            require("fs").writeFileSync("config.js", "window.LURT_CONFIG = " + JSON.stringify(c) + ";\n");
-            console.log("Nøkkel:", c.apiKey ? "ja" : "nei", "| Proxy:", c.proxy ? "ja" : "nei");
+            const fs = require("fs");
+            const key = (process.env.KASSAL_KEY || "").trim(), proxy = (process.env.PROXY_URL || "").trim();
+            const c = { apiKey: proxy ? "" : key, proxy };
+            fs.writeFileSync("config.js", "window.LURT_CONFIG = " + JSON.stringify(c) + ";\n");
+            fs.writeFileSync("build-info.json", JSON.stringify({ priceData: !!(key || proxy), built: new Date().toISOString(), commit: process.env.GITHUB_SHA.slice(0, 7) }) + "\n");
+            const ok = !!(key || proxy);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, ok ? "✅ Prisnøkkel bygget inn\n" : "⚠️ Fant ikke secret KASSAL_KEY – appen publiseres uten prisdata\n");
+            console.log(ok ? "Prisnøkkel: OK" : "::warning::Fant ikke secret KASSAL_KEY");
           '
           rm -rf .github worker.js
 
