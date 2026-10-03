@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -74,10 +74,18 @@ function getLocation() {
   });
 }
 
-async function autoStore() {
+// Spør bare om posisjon når brukeren gjør noe (ikke ved oppstart),
+// med mindre tillatelsen allerede er gitt.
+async function geoGranted() {
+  try { return (await navigator.permissions.query({ name: 'geolocation' })).state === 'granted'; }
+  catch { return false; }
+}
+async function autoStore({ ask = false } = {}) {
   const saved = JSON.parse(sessionStorage.getItem('lurt.chain') || 'null');
   if (saved) { setChain(saved.chain, saved.label); }
   if (settings().autoStore === false || !API.access().ready) return;
+  if (state.chain && state.loc) return;
+  if (!ask && !(await geoGranted())) return;
   const loc = await getLocation();
   if (!loc) return;
   state.loc = loc;
@@ -140,6 +148,7 @@ function camIdle() {
 }
 
 async function startCam() {
+  if (!state.chain) autoStore({ ask: true });
   try {
     $('#camMsg').textContent = 'Starter kamera …';
     $('#camStart').classList.add('hidden');
