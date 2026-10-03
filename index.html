@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="nb">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lurt?</title>
+  <meta name="description" content="Skann en vare og se om kjøpet er lurt – eller om du blir lurt.">
+  <meta name="theme-color" content="#14231b">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">Lurt<span>?</span></div>
+    <button id="storeChip" class="chip store" type="button">📍 <span id="storeName">Velg butikk</span> ▾</button>
+  </header>
+
+  <main>
+    <!-- SKANN -->
+    <section id="scr-scan" class="screen active">
+      <div class="modes" role="tablist">
+        <button class="mode active" data-mode="barcode" role="tab">Strekkode</button>
+        <button class="mode" data-mode="label" role="tab">Hyllelapp</button>
+        <button class="mode" data-mode="product" role="tab">Vare</button>
+      </div>
+
+      <div class="cam" id="cam">
+        <video id="video" muted playsinline></video>
+        <div class="frame" id="frame"></div>
+        <div class="cam-msg" id="camMsg">Trykk for å starte kameraet</div>
+        <button class="cam-start" id="camStart" type="button">📷 Start kamera</button>
+      </div>
+
+      <p class="hint" id="modeHint">Hold strekkoden inne i rammen – den leses automatisk.</p>
+
+      <div class="row">
+        <button id="shoot" class="btn primary hidden" type="button">📸 Ta bilde</button>
+        <label class="btn ghost" for="filePick">🖼️ Bilde fra galleri</label>
+        <input id="filePick" type="file" accept="image/*" hidden>
+      </div>
+
+      <form id="manual" class="manual">
+        <input id="manualInput" type="search" inputmode="search" placeholder="Søk vare eller skriv strekkode" autocomplete="off">
+        <button class="btn" type="submit">Søk</button>
+      </form>
+
+      <div id="status" class="status hidden"></div>
+      <button id="demoBtn" class="link hidden" type="button">Prøv med eksempeldata</button>
+    </section>
+
+    <!-- VELG VARE (etter søk / bilde) -->
+    <section id="scr-pick" class="screen">
+      <button class="back" data-go="scan" type="button">← Tilbake</button>
+      <h2>Hvilken vare er det?</h2>
+      <div id="labelRead" class="card soft hidden"></div>
+      <form id="refine" class="manual">
+        <input id="refineInput" type="search" placeholder="Rett søket">
+        <button class="btn" type="submit">Søk</button>
+      </form>
+      <ul id="pickList" class="list"></ul>
+    </section>
+
+    <!-- RESULTAT -->
+    <section id="scr-result" class="screen">
+      <button class="back" data-go="scan" type="button">← Skann ny</button>
+      <div id="result"></div>
+    </section>
+
+    <!-- FØLGER / HISTORIKK -->
+    <section id="scr-saved" class="screen">
+      <h2>Følger</h2>
+      <p class="muted small">Varer du følger. Åpne appen for å se om prisen har endret seg.</p>
+      <ul id="watchList" class="list"></ul>
+      <h2>Sist skannet</h2>
+      <ul id="histList" class="list"></ul>
+    </section>
+
+    <!-- INNSTILLINGER -->
+    <section id="scr-settings" class="screen">
+      <h2>Innstillinger</h2>
+      <div class="card">
+        <h3>Prisdata (gratis)</h3>
+        <p class="small">Lurt? henter priser fra <a href="https://kassal.app" target="_blank" rel="noopener">Kassalapp</a>, som samler priser fra norske dagligvarekjeder. Det er gratis for privat bruk, men du trenger en egen nøkkel:</p>
+        <ol class="small steps">
+          <li>Åpne <a href="https://kassal.app/profil/api" target="_blank" rel="noopener">kassal.app/profil/api</a> og logg inn (gratis konto).</li>
+          <li>Lag en ny API-nøkkel og kopier den.</li>
+          <li>Lim den inn her og trykk <b>Lagre og test</b>.</li>
+        </ol>
+        <label class="field">API-nøkkel
+          <input id="apiKey" type="password" autocomplete="off" placeholder="Lim inn nøkkelen">
+        </label>
+        <button id="saveKey" class="btn primary" type="button">Lagre og test</button>
+        <p id="keyStatus" class="small"></p>
+        <p class="muted small">Nøkkelen lagres bare på denne telefonen.</p>
+      </div>
+
+      <div class="card">
+        <h3>Butikk</h3>
+        <label class="check"><input id="autoStore" type="checkbox" checked> Finn butikken automatisk med GPS</label>
+      </div>
+
+      <details class="card">
+        <summary><h3>Avansert: proxy</h3></summary>
+        <p class="small">Trengs bare hvis appen sier at den ikke når Kassalapp selv om du har nett. Se <code>worker.js</code> i repoet for en gratis Cloudflare-proxy.</p>
+        <label class="field">Proxy-adresse
+          <input id="proxy" type="url" placeholder="https://lurt-proxy.dittnavn.workers.dev">
+        </label>
+        <button id="saveProxy" class="btn" type="button">Lagre</button>
+      </details>
+
+      <div class="card">
+        <h3>Data</h3>
+        <button id="clearCache" class="btn ghost" type="button">Tøm lagrede priser</button>
+        <button id="clearHist" class="btn ghost" type="button">Slett historikk</button>
+      </div>
+      <p class="muted small center">Priser fra Kassalapp er kjedenes registrerte (nett)priser og kan avvike fra hyllen i enkeltbutikker.</p>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-go="scan" class="active" type="button"><span>📷</span>Skann</button>
+    <button data-go="saved" type="button"><span>⭐</span>Følger</button>
+    <button data-go="settings" type="button"><span>⚙️</span>Innstillinger</button>
+  </nav>
+
+  <!-- Butikkvelger -->
+  <dialog id="storeDlg" class="sheet">
+    <form method="dialog">
+      <h3>Hvor handler du?</h3>
+      <div id="nearList"></div>
+      <p class="muted small">Alle kjeder</p>
+      <div id="chainList" class="chips"></div>
+      <button class="btn ghost wide" value="cancel">Lukk</button>
+    </form>
+  </dialog>
+
+  <script src="api.js"></script>
+  <script src="verdict.js"></script>
+  <script src="scan.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
