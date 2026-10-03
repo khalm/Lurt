@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '1.2.2';
+const APP_VERSION = '1.3.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -38,7 +38,7 @@ $$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go))
 
 function status(msg, kind = '') {
   const el = $('#status');
-  if (!msg) { el.classList.add('hidden'); return; }
+  if (!msg) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   el.className = 'status ' + kind;
   el.innerHTML = msg;
 }
@@ -127,8 +127,8 @@ const fmtKm = (d) => d < 1 ? Math.round(d * 1000) + ' m' : d.toFixed(1).replace(
 // ---------- Skanning ----------
 const HINTS = {
   barcode: 'Hold strekkoden inne i rammen – den leses automatisk.',
-  label: 'Ta bilde av hyllelappen. Appen leser pris og navn (og strekkoden hvis den finnes).',
-  product: 'Ta bilde av forsiden på varen. Strekkoden er sikrest – men navnet holder ofte.',
+  label: 'Gå nær, så hyllelappen fyller rammen. Hold stødig og unngå gjenskinn.',
+  product: 'Strekkoden er sikrest: snu varen så den synes. Ellers – ta bilde av forsiden med merke og navn inne i rammen.',
 };
 $$('.mode').forEach(b => b.addEventListener('click', () => {
   state.mode = b.dataset.mode;
@@ -139,7 +139,9 @@ $$('.mode').forEach(b => b.addEventListener('click', () => {
   if (Scan.running()) beginWatching();
 }));
 
+let torchOn = false;
 function camIdle() {
+  torchOn = false; $('#torch').classList.add('hidden'); $('#torch').classList.remove('on');
   $('#cam').classList.remove('live');
   $('#camMsg').textContent = 'Trykk for å starte kameraet';
   $('#camStart').classList.remove('hidden');
@@ -155,6 +157,7 @@ async function startCam() {
     $('#cam').classList.add('live');
     $('#camMsg').textContent = '';
     $('#shoot').classList.toggle('hidden', state.mode === 'barcode');
+    $('#torch').classList.toggle('hidden', !Scan.torchSupported());
     beginWatching();
   } catch (e) {
     camIdle();
@@ -175,12 +178,23 @@ function beginWatching() {
 }
 
 $('#shoot').addEventListener('click', () => shootLabel());
+$('#torch').addEventListener('click', async (e) => {
+  e.stopPropagation();
+  torchOn = !torchOn;
+  try { await Scan.setTorch(torchOn); } catch { torchOn = false; }
+  $('#torch').classList.toggle('on', torchOn);
+});
 
 async function shootLabel(knownEan) {
   if (state.busy) return;
-  const canvas = Scan.snapshot($('#video'));
+  state.busy = true;
+  status('Hold stødig …');
+  const video = $('#video');
+  let shot;
+  try { shot = await Scan.bestShot(video, $('#frame')); }
+  finally { state.busy = false; }
   Scan.stop(); camIdle();
-  await analyzeImage(canvas, knownEan);
+  await analyzeImage(shot.full, knownEan, shot.crop);
 }
 
 $('#filePick').addEventListener('change', async (e) => {
@@ -191,32 +205,33 @@ $('#filePick').addEventListener('change', async (e) => {
   await analyzeImage(canvas);
 });
 
-async function analyzeImage(canvas, knownEan) {
+async function analyzeImage(canvas, knownEan, crop) {
   state.busy = true;
   try {
     status('Ser etter strekkode …');
     const ean = knownEan || await Scan.detectIn(canvas).catch(() => null);
-    const wantText = state.mode !== 'barcode' || !ean;
-    let read = { price: null, before: null, offer: false, query: '', ean: null };
-    if (wantText) {
-      status('Leser teksten i bildet … (første gang lastes en leser ned, ca. 10 MB)');
-      const res = await Scan.ocr(canvas, (s, p) => {
-        if (/loading|initializ/i.test(s)) status('Gjør klar tekstleser … ' + (p ? Math.round(p * 100) + ' %' : ''));
-        if (/recogniz/i.test(s)) status('Leser teksten … ' + Math.round((p || 0) * 100) + ' %');
-      });
-      read = Label.parse(res);
-    }
-    const finalEan = ean || read.ean;
     const isLabel = state.mode === 'label';
+    // Har vi strekkoden, trengs tekst bare for å lese prisen på hyllelappen
+    if (ean && !isLabel) { status(''); return openEan(ean); }
+    status('Leser teksten i bildet … (første gang lastes en leser ned, ca. 10 MB)');
+    const res = await Scan.ocr(crop || canvas, (s, p) => {
+      if (/loading|initializ/i.test(s)) status('Gjør klar tekstleser … ' + (p ? Math.round(p * 100) + ' %' : ''));
+      if (/recogniz/i.test(s)) status('Leser teksten …');
+    });
+    const read = Label.parse(res);
+    const finalEan = ean || read.ean;
     status('');
     if (finalEan) {
       return openEan(finalEan, { shelfPrice: isLabel ? read.price : null, claimedBefore: isLabel ? read.before : null });
     }
-    if (!read.query) {
-      status('Fant verken strekkode eller lesbar tekst. Prøv nærmere, med bedre lys – eller søk manuelt.', 'bad');
+    if (!read.words.length) {
+      status(state.mode === 'product'
+        ? 'Fant ingen tydelig tekst. Snu varen så strekkoden synes – det er sikrest. Eller ta bildet nærmere, med merke og navn i rammen.'
+        : 'Fant ingen tydelig tekst. Gå nærmere så lappen fyller rammen, og unngå gjenskinn.', 'bad');
       return;
     }
-    showPick(read.query, isLabel ? read : null);
+    read.preview = (crop || canvas).toDataURL('image/jpeg', 0.7);
+    showPick(read, isLabel);
   } catch (e) {
     status(e.code ? apiErrorText(e) : 'Klarte ikke å lese bildet: ' + esc(e.message), 'bad');
   } finally { state.busy = false; }
@@ -229,31 +244,81 @@ $('#manual').addEventListener('submit', (e) => {
   if (!q) return;
   const digits = q.replace(/\s/g, '');
   if (/^\d{8,14}$/.test(digits)) return openEan(Scan.normEan(digits));
-  showPick(q, null);
+  showPick({ words: [], query: q, manual: true }, false);
 });
 
 // ---------- Velg vare ----------
-let pendingRead = null;
-async function showPick(q, read) {
-  pendingRead = read;
+let pendingRead = null, chosenWords = [];
+async function showPick(read, isLabel) {
+  pendingRead = isLabel ? read : null;
   go('pick');
-  $('#refineInput').value = q;
   const lr = $('#labelRead');
-  if (read && (read.price || read.before)) {
-    lr.classList.remove('hidden');
-    lr.innerHTML = `Lest fra lappen: <b>${read.price ? kr(read.price) : '–'}</b>${read.before ? ` · før ${kr(read.before)}` : ''}${read.offer ? ' · <span class="tag">tilbud</span>' : ''}`;
-  } else lr.classList.add('hidden');
-  await runSearch(q);
+  const bits = [];
+  if (read.preview) bits.push(`<img class="readprev" src="${read.preview}" alt="Bildet som ble lest">`);
+  if (isLabel && (read.price || read.before)) {
+    bits.push(`Lest fra lappen: <b>${read.price ? kr(read.price) : '–'}</b>${read.before ? ` · før ${kr(read.before)}` : ''}${read.offer ? ' · <span class="tag">tilbud</span>' : ''}`);
+  }
+  chosenWords = read.manual ? [] : read.words.slice(0, 3);
+  if (read.words.length) {
+    bits.push(`<span class="small muted">Ord i bildet – trykk for å velge hvilke det skal søkes på:</span><div class="chips words">${
+      read.words.map(w => `<button class="chip ${chosenWords.includes(w) ? 'on' : ''}" data-word="${esc(w)}">${esc(w)}</button>`).join('')}</div>`);
+  }
+  lr.classList.toggle('hidden', !bits.length);
+  lr.innerHTML = bits.map(b => `<div class="rd">${b}</div>`).join('');
+  $('#refineInput').value = read.manual ? read.query : chosenWords.join(' ');
+  await runSearch(read.manual ? read.query : null, read.manual ? [] : read.words);
 }
-$('#refine').addEventListener('submit', (e) => { e.preventDefault(); runSearch($('#refineInput').value.trim()); });
+$('#labelRead').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-word]');
+  if (!b) return;
+  const w = b.dataset.word;
+  chosenWords = chosenWords.includes(w) ? chosenWords.filter(x => x !== w) : [...chosenWords, w];
+  b.classList.toggle('on', chosenWords.includes(w));
+  const q = chosenWords.join(' ');
+  $('#refineInput').value = q;
+  if (q) runSearch(q, chosenWords);
+});
+$('#refine').addEventListener('submit', (e) => { e.preventDefault(); const q = $('#refineInput').value.trim(); runSearch(q, q.split(/\s+/)); });
 
-async function runSearch(q) {
+const norm = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
+// Hvor godt passer et søketreff med ordene vi leste? (tåler små lesefeil: sammenligner starten av ordene)
+function matchScore(p, words) {
+  const hay = norm(p.name + ' ' + p.brand);
+  let s = 0;
+  for (const w of words) {
+    const n = norm(w);
+    if (hay.includes(n)) s += 2;
+    else if (n.length >= 5 && hay.includes(n.slice(0, 4))) s += 1;
+  }
+  return s;
+}
+
+let searchSeq = 0;
+async function runSearch(q, words = []) {
   const ul = $('#pickList');
-  if (!q) return;
+  const seq = ++searchSeq;
   ul.innerHTML = '<li class="muted">Søker …</li>';
+  // Prøv flere søk: alle ord, så færre, så enkeltord – stopp når vi har nok treff
+  const queries = q ? [q] : [...new Set([words.slice(0, 3).join(' '), words.slice(0, 2).join(' '), words[0], words[1], words[2]].filter(Boolean))];
+  const found = new Map();
   try {
-    const list = await API.search(q);
-    if (!list.length) { ul.innerHTML = '<li class="muted">Ingen treff. Prøv færre eller andre ord (f.eks. merke + type).</li>'; return; }
+    const add = (list) => { for (const p of list) { const e = found.get(p.ean); if (e) e.hits++; else found.set(p.ean, { ...p, hits: 1 }); } };
+    for (const qq of queries.slice(0, 4)) {
+      add(await API.search(qq));
+      if (found.size >= 6) break;
+    }
+    // Ingen treff? Søk på starten av de lengste ordene (f.eks. «Grandios» → «grand»)
+    if (!found.size && !q) {
+      const stems = [...new Set(words.filter(w => w.length >= 5).map(w => w.slice(0, 5).toLowerCase()))].slice(0, 2);
+      for (const st of stems) add(await API.search(st));
+    }
+    if (seq !== searchSeq) return;
+    const scoreWords = words.length ? words : (q || '').split(/\s+/);
+    const list = [...found.values()]
+      .map(p => ({ ...p, score: matchScore(p, scoreWords) * 2 + p.hits }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 15);
+    if (!list.length) { ul.innerHTML = '<li class="muted">Ingen treff. Velg andre ord over, eller skriv merke + type (f.eks. «tine melk»).</li>'; return; }
     ul.innerHTML = list.map(p => {
       const lo = p.prices.length ? Math.min(...p.prices) : null;
       return `<li><button class="item" data-ean="${esc(p.ean)}">
@@ -261,7 +326,7 @@ async function runSearch(q) {
         <div><b>${esc(p.name)}</b><span class="muted small">${esc(p.brand)}${lo != null ? ' · fra ' + kr(lo) : ''}</span></div>
       </button></li>`;
     }).join('');
-  } catch (e) { ul.innerHTML = `<li class="status bad">${apiErrorText(e)}</li>`; }
+  } catch (e) { if (seq === searchSeq) ul.innerHTML = `<li class="status bad">${apiErrorText(e)}</li>`; }
 }
 $('#pickList').addEventListener('click', (e) => {
   const b = e.target.closest('[data-ean]');

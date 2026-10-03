@@ -10,7 +10,8 @@ Er kjøpet lurt – eller blir du lurt? Skann en vare i butikken og få svaret.
 1. **Skann** strekkoden, ta bilde av **hyllelappen**, eller ta bilde av **selve varen**.
    - Strekkoden leses automatisk og er sikrest.
    - Fra hyllelappen leses også prisen (og eventuell «før»-pris).
-   - Uten strekkode leses navnet, og du velger riktig vare fra en liste.
+   - Uten strekkode leses navnet, og du velger riktig vare fra en liste. Ordene appen fant vises som knapper du kan slå av og på.
+   - Tips: gå nær så lappen fyller rammen, hold stødig (appen tar flere bilder og velger det skarpeste), og bruk 🔦 i dårlig lys.
 2. **Butikken** du står i finnes automatisk med GPS (eller velg selv øverst).
 3. Du får en **dom**: 😎 *Lurt kjøp!*, 🤔 *Helt grei pris* eller 🤡 *Du blir lurt!* – med begrunnelse:
    - Pris nå i andre kjeder, og hva du sparer
