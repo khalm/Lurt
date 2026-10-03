@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -74,8 +74,7 @@ function getLocation() {
   });
 }
 
-// Spør bare om posisjon når brukeren gjør noe (ikke ved oppstart),
-// med mindre tillatelsen allerede er gitt.
+// Sjekker om posisjon allerede er tillatt
 async function geoGranted() {
   try { return (await navigator.permissions.query({ name: 'geolocation' })).state === 'granted'; }
   catch { return false; }
@@ -554,5 +553,5 @@ setTimeout(() => {
 }, 1500);
 
 refreshDemoBtn();
-autoStore();
+autoStore({ ask: true }); // spør om posisjon med en gang appen åpnes
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
