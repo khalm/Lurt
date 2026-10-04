@@ -70,3 +70,9 @@ Ren HTML/CSS/JavaScript uten byggesteg, hostet på GitHub Pages. Kan redigeres r
 - `config.js` – innebygd nøkkel/proxy (skrives av `.github/workflows/pages.yml`)
 - `icon.svg` – logo (PNG-ikonene er laget fra den)
 - `worker.js` – valgfri proxy
+
+## Android-app (APK)
+Siden Chrome ikke alltid installerer nettappen som ekte app, bygges Lurt? også som en vanlig Android-app av GitHub (`.github/workflows/android.yml`).
+- **Last ned:** https://github.com/khalm/Lurt/releases/download/android/Lurt.apk (åpne lenken på telefonen, trykk på filen og velg «Installer»; tillat installasjon fra Chrome hvis telefonen spør).
+- Appen viser nettsiden i fullskjerm, så den **oppdaterer seg selv** når nettsiden oppdateres. APK-en bygges bare på nytt når noe i `android/` endres.
+- Signeringsnøkkelen (`android/lurt.keystore`) ligger i repoet slik at nye versjoner kan installeres over den gamle.

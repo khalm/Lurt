@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.1.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -682,7 +682,7 @@ let installEvt = null;
 const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault(); installEvt = e;
-  if (!standalone()) { $('#installCard').classList.remove('hidden'); $('#installTop').classList.remove('hidden'); }
+  if (!standalone() && !/ LurtApp\//.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent)) { $('#installCard').classList.remove('hidden'); $('#installTop').classList.remove('hidden'); }
 });
 window.addEventListener('appinstalled', () => {
   installEvt = null;
@@ -709,6 +709,11 @@ function refreshDemoBtn() {
   else status('');
 }
 $('#demoBtn').addEventListener('click', () => { if (!state.chain) setChain('kiwi', 'Kiwi (demo)'); openEan(API.DEMO_EAN); });
+
+// Android-app: vis nedlastingslenke på Android når man ikke allerede er i appen
+const inApp = / LurtApp\//.test(navigator.userAgent);
+if (/Android/i.test(navigator.userAgent) && !inApp) $('#apkLink').classList.remove('hidden');
+if (inApp) document.documentElement.classList.add('in-app');
 
 // Versjon og splash
 $$('[data-version]').forEach(el => el.textContent = 'v' + APP_VERSION);

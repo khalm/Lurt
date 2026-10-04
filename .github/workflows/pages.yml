@@ -42,7 +42,7 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, (ok ? "✅ Prisnøkkel bygget inn\n" : "⚠️ Fant ikke secret KASSAL_KEY – appen publiseres uten prisdata\n") + (gemini ? "✅ KI-lesing av hyllelapper (GEMINI_KEY)\n" : "ℹ️ Ingen GEMINI_KEY – hyllelapper leses lokalt\n"));
             console.log(ok ? "Prisnøkkel: OK" : "::warning::Fant ikke secret KASSAL_KEY");
           '
-          rm -rf .github worker.js
+          rm -rf .github worker.js android
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
