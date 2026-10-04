@@ -29,15 +29,17 @@ jobs:
         env:
           KASSAL_KEY: ${{ secrets.KASSAL_KEY }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
         run: |
           node -e '
             const fs = require("fs");
             const key = (process.env.KASSAL_KEY || "").trim(), proxy = (process.env.PROXY_URL || "").trim();
-            const c = { apiKey: proxy ? "" : key, proxy };
+            const gemini = (process.env.GEMINI_KEY || "").trim();
+            const c = { apiKey: proxy ? "" : key, proxy, geminiKey: gemini };
             fs.writeFileSync("config.js", "window.LURT_CONFIG = " + JSON.stringify(c) + ";\n");
-            fs.writeFileSync("build-info.json", JSON.stringify({ priceData: !!(key || proxy), built: new Date().toISOString(), commit: process.env.GITHUB_SHA.slice(0, 7) }) + "\n");
+            fs.writeFileSync("build-info.json", JSON.stringify({ priceData: !!(key || proxy), aiLabels: !!gemini, built: new Date().toISOString(), commit: process.env.GITHUB_SHA.slice(0, 7) }) + "\n");
             const ok = !!(key || proxy);
-            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, ok ? "✅ Prisnøkkel bygget inn\n" : "⚠️ Fant ikke secret KASSAL_KEY – appen publiseres uten prisdata\n");
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, (ok ? "✅ Prisnøkkel bygget inn\n" : "⚠️ Fant ikke secret KASSAL_KEY – appen publiseres uten prisdata\n") + (gemini ? "✅ KI-lesing av hyllelapper (GEMINI_KEY)\n" : "ℹ️ Ingen GEMINI_KEY – hyllelapper leses lokalt\n"));
             console.log(ok ? "Prisnøkkel: OK" : "::warning::Fant ikke secret KASSAL_KEY");
           '
           rm -rf .github worker.js

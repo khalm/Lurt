@@ -36,7 +36,6 @@
       <div class="modes" role="tablist">
         <button class="mode active" data-mode="barcode" role="tab">Strekkode</button>
         <button class="mode" data-mode="label" role="tab">Hyllelapp</button>
-        <button class="mode" data-mode="product" role="tab">Vare</button>
       </div>
 
       <div class="cam" id="cam">
@@ -51,7 +50,7 @@
       <p class="hint" id="modeHint">Hold strekkoden inne i rammen – den leses automatisk.</p>
 
       <div class="row">
-        <button id="shoot" class="btn primary hidden" type="button">📸 Ta bilde</button>
+        <button id="shoot" class="btn primary hidden" type="button">📸 Les lappen</button>
         <label class="btn ghost" for="filePick">🖼️ Bilde fra galleri</label>
         <input id="filePick" type="file" accept="image/*" hidden>
       </div>
@@ -111,12 +110,9 @@
       </div>
 
       <div class="card">
-        <h3>Gjenkjenn varer på bilde</h3>
-        <label class="check"><input id="visionOn" type="checkbox" checked> Bruk bildegjenkjenning i «Vare»</label>
-        <p class="small muted" id="visionInfo"></p>
-        <p class="small" id="memInfo"></p>
-        <p class="small muted">Når du tar bilde av en vare og velger riktig treff, husker appen det. Neste gang kjenner den igjen varen raskere («⭐ Kjent fra før»). Alt lagres bare på telefonen.</p>
-        <button id="forgetMem" class="btn ghost" type="button">Glem pugget varer</button>
+        <h3>Lesing av hyllelapper</h3>
+        <label class="check"><input id="aiOn" type="checkbox" checked> Bruk KI-lesing (Google Gemini)</label>
+        <p class="small muted" id="aiInfo"></p>
       </div>
 
       <div class="card">
@@ -161,7 +157,7 @@
   <script src="verdict.js"></script>
   <script src="brands.js"></script>
   <script src="scan.js"></script>
-  <script src="vision.js"></script>
+  <script src="ai.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

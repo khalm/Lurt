@@ -7,14 +7,11 @@ Er kjøpet lurt – eller blir du lurt? Skann en vare i butikken og få svaret.
 **Åpne appen:** https://khalm.github.io/Lurt/
 
 ## Slik virker det
-1. **Skann** strekkoden, ta bilde av **hyllelappen**, eller ta bilde av **selve varen**.
+1. **Skann** strekkoden, eller ta bilde av **hyllelappen**.
    - Strekkoden leses automatisk og er sikrest.
-   - Fra hyllelappen leses også prisen (og eventuell «før»-pris).
-   - Uten strekkode leses navnet, og du velger riktig vare fra en liste. Ordene appen fant vises som knapper du kan slå av og på.
-   - I **Vare**-modus kjenner appen også igjen varen på bildet: den gjetter varetypen (kaffe, pizza, melk …) og sammenligner bildet med produktbildene, så den mest like havner øverst («👁️ Mest lik»).
-   - Appen kjenner ~400 norske varemerker (Tine, Gilde, Stabburet, Grandiosa …) og lærer flere fra prisdataene. Feilleste merker rettes («Grandios» → «Grandiosa»), og det søkes på merke + varetype.
-   - Den **pugger** varer du tar bilde av og velger, så neste gang kjenner den dem igjen («⭐ Kjent fra før»). Alt lagres bare på telefonen.
-   - Tips: gå nær så lappen fyller rammen, hold stødig (appen tar flere bilder og velger det skarpeste), og bruk 🔦 i dårlig lys.
+   - På hyllelappen leses varenavn, pris, før-pris, kilopris og flerkjøpstilbud. Har lappen strekkode, brukes den.
+   - Du ser hva som ble lest og kan rette prisen før du velger vare. Treff med samme pris som på lappen merkes «✓ Samme pris».
+   - Tips: hold telefonen rett foran lappen så den fyller rammen, og unngå gjenskinn. Appen tar et ekte foto i full oppløsning, bytter til nærbilde automatisk og har 🔦 for dårlig lys.
 2. **Butikken** du står i finnes automatisk med GPS (eller velg selv øverst).
 3. Du får en **dom**: 😎 *Lurt kjøp!*, 🤔 *Helt grei pris* eller 🤡 *Du blir lurt!* – med begrunnelse:
    - Pris nå i andre kjeder, og hva du sparer
@@ -26,16 +23,19 @@ Er kjøpet lurt – eller blir du lurt? Skann en vare i butikken og få svaret.
    - Nærmeste butikk i den billigste kjeden
 4. **Følg prisen** på varer du kjøper ofte, og se om de har blitt billigere neste gang du åpner appen.
 
-## Prisdata: bygg inn nøkkelen én gang (brukerne slipper)
-Prisene kommer fra [Kassalapp](https://kassal.app) (gratis for privat bruk). Nøkkelen legges inn **én gang i GitHub**, så bygges den inn i appen automatisk:
-1. Hent nøkkel på [kassal.app/profil/api](https://kassal.app/profil/api).
-2. I repoet: **Settings → Secrets and variables → Actions → New repository secret**. Navn: `KASSAL_KEY`, verdi: nøkkelen.
-3. **Settings → Pages → Source: GitHub Actions** (én gang).
-4. **Actions → Publiser appen → Run workflow** (eller bare gjør en endring).
+## Nøkler (legges inn på GitHub – brukerne slipper)
+Begge nøklene er gratis og legges inn **én gang** under **Settings → Secrets and variables → Actions → New repository secret**. De bygges inn i appen automatisk når den publiseres.
 
-Brukerne ser aldri noe til nøkkelen. Etter publisering viser `build-info.json` om nøkkelen ble funnet (`priceData: true`).
+| Secret | Hva | Hvor du får den |
+|---|---|---|
+| `KASSAL_KEY` | Priser og butikker (påkrevd) | [kassal.app/profil/api](https://kassal.app/profil/api) |
+| `GEMINI_KEY` | KI-lesing av hyllelapper (anbefalt) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) → «Create API key» |
 
-Nøkkelen ligger ikke i koden i repoet, men kan finnes av noen som graver i den publiserte siden. For å skjule den helt kan eieren av repoet sette opp gratis Cloudflare-proxy (`worker.js`) og legge adressen inn som secret `PROXY_URL` i stedet.
+Etter at en secret er lagt inn: **Actions → Publiser appen → Run workflow**. `build-info.json` viser om nøklene ble funnet (`priceData`, `aiLabels`).
+
+Uten `GEMINI_KEY` leses lappene med enklere tekstgjenkjenning på telefonen. Gemini har en gratis dagskvote; er den brukt opp, faller appen automatisk tilbake til lokal lesing. Bildet av lappen sendes da til Google for å leses. Ikke slå på fakturering for nøkkelen, så kan den aldri koste noe.
+
+Nøklene ligger ikke i koden i repoet, men kan finnes av noen som graver i den publiserte siden. For å skjule Kassal-nøkkelen helt kan du sette opp gratis Cloudflare-proxy (`worker.js`) og legge adressen inn som secret `PROXY_URL` i stedet.
 
 ## Installer på telefonen
 - **Android (Chrome):** åpne lenken → ⋮ → **Installer app**. På Pixel havner nye apper i **appskuffen** (sveip opp), ikke automatisk på hjemskjermen.
@@ -43,18 +43,18 @@ Nøkkelen ligger ikke i koden i repoet, men kan finnes av noen som graver i den 
 - **iPhone (Safari):** åpne lenken → Del → **Legg til på Hjem-skjerm**.
 
 ## Helt gratis
-Ingen betalte tjenester. Strekkoder og tekst leses **på telefonen**:
+Ingen betalte tjenester:
 - Strekkode: innebygd i Chrome på Android; på iPhone brukes [ZXing](https://github.com/Sec-ant/barcode-detector) (åpen kildekode).
 - Tekst på hyllelapp/emballasje: [Tesseract.js](https://github.com/naptha/tesseract.js) (lastes ned første gang, ca. 10 MB).
-- Bildegjenkjenning: [MobileCLIP S0](https://huggingface.co/Xenova/mobileclip_s0) via [Transformers.js](https://github.com/huggingface/transformers.js) (ca. 55 MB første gang, kan slås av i Innstillinger). Produktbildene hentes små via [wsrv.nl](https://wsrv.nl).
+- KI-lesing av hyllelapper: [Google Gemini](https://ai.google.dev) (gratis kvote, valgfritt).
 - Priser og butikker: [Kassalapp API](https://kassal.app/api) (gratis «Hobby»-nivå: 60 oppslag i minuttet). Svar lagres i 6 timer, så samme vare koster ikke nye oppslag.
 
 ## Begrensninger
 - Kassalapp har kjedenes registrerte (nett)priser. De fleste kjeder har like priser i hele landet, men enkeltbutikker kan avvike. Derfor kan du alltid skrive inn hylleprisen selv.
-- Tekstlesing av emballasje er usikker – strekkode eller hyllelapp gir best treff.
+- Uten KI-lesing er tekstlesing av hyllelapper usikker – strekkode gir alltid best treff.
 
 ## Hvis appen ikke får kontakt med Kassalapp
-Noen nettlesere kan blokkere direkte oppslag (CORS). Da kan du sette opp en gratis proxy på Cloudflare – se instruksjonene øverst i `worker.js`, og lim adressen inn under **Innstillinger → Avansert: proxy**.
+Noen nettlesere kan blokkere direkte oppslag (CORS). Da kan du sette opp en gratis proxy på Cloudflare – se instruksjonene øverst i `worker.js`, og legg adressen inn som GitHub-secret `PROXY_URL`.
 
 ## Teknisk
 Ren HTML/CSS/JavaScript uten byggesteg, hostet på GitHub Pages. Kan redigeres rett i GitHub på mobilen.
@@ -63,8 +63,8 @@ Ren HTML/CSS/JavaScript uten byggesteg, hostet på GitHub Pages. Kan redigeres r
 - `api.js` – Kassalapp-oppslag, lagring og kjeder
 - `verdict.js` – regnestykket bak «Lurt?»-dommen (poeng, falske tilbud, før-pris)
 - `scan.js` – kamera, strekkodeleser og lesing av hyllelapper
-- `vision.js` – gjenkjenning av varer på bilde, og pugging av varer du har valgt
-- `brands.js` – liste over varemerker (rediger fritt for å legge til flere)
+- `ai.js` – KI-lesing av hyllelapper (Gemini)
+- `brands.js` – liste over varemerker, brukes til å rette lesefeil (rediger fritt)
 - `style.css` – utseende
 - `sw.js`, `manifest.json` – installerbar app som åpner uten nett
 - `config.js` – innebygd nøkkel/proxy (skrives av `.github/workflows/pages.yml`)

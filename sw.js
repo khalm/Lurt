@@ -1,6 +1,6 @@
 // sw.js — gjør appen installerbar og lar den åpne uten nett
-const VERSION = 'lurt-1.6.0';
-const CORE = ['./', 'index.html', 'style.css', 'config.js', 'app.js', 'api.js', 'verdict.js', 'scan.js', 'vision.js', 'brands.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-48.png'];
+const VERSION = 'lurt-2.0.0';
+const CORE = ['./', 'index.html', 'style.css', 'config.js', 'app.js', 'api.js', 'verdict.js', 'scan.js', 'ai.js', 'brands.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-48.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
@@ -12,7 +12,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   // Prisdata: aldri fra service worker (appen har egen lagring)
-  if (url.hostname.includes('kassal.app') || url.hostname.includes('workers.dev')) return;
+  if (url.hostname.includes('kassal.app') || url.hostname.includes('workers.dev') || url.hostname.includes('googleapis.com')) return;
   // Biblioteker og språkdata fra CDN: lagre første gang (stor fil, endres ikke)
   if (/jsdelivr|fonts\.(googleapis|gstatic)/.test(url.hostname)) {
     e.respondWith(caches.open('lurt-libs').then(async c => {

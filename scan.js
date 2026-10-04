@@ -61,7 +61,7 @@ const Scan = (() => {
       return navigator.mediaDevices.getUserMedia({ audio: false, video: constraints });
     }
   }
-  const BASE = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  const BASE = { width: { ideal: 1920 }, height: { ideal: 1440 } };
 
   async function probeCameras() {
     const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
@@ -206,20 +206,83 @@ const Scan = (() => {
   }
 
   // Klipper ut området inne i rammen på skjermen (videoen vises med object-fit: cover)
-  function cropToFrame(video, frame) {
+  // Hvor rammen er, som andel (0–1) av videobildet
+  function frameRect(video, frame, pad = 0.04) {
     const vr = video.getBoundingClientRect(), fr = frame.getBoundingClientRect();
     const VW = video.videoWidth, VH = video.videoHeight;
     const scale = Math.max(vr.width / VW, vr.height / VH);
     const offX = (vr.width - VW * scale) / 2, offY = (vr.height - VH * scale) / 2;
-    const pad = 0.04; // litt luft rundt rammen
     let x = (fr.left - vr.left - offX) / scale, y = (fr.top - vr.top - offY) / scale;
     let w = fr.width / scale, h = fr.height / scale;
     x -= w * pad; y -= h * pad; w *= 1 + 2 * pad; h *= 1 + 2 * pad;
     x = Math.max(0, x); y = Math.max(0, y); w = Math.min(VW - x, w); h = Math.min(VH - y, h);
+    return { x: x / VW, y: y / VH, w: w / VW, h: h / VH };
+  }
+
+  function cropCanvas(src, sw, sh, r) {
     const c = document.createElement('canvas');
-    c.width = Math.round(w); c.height = Math.round(h);
-    c.getContext('2d').drawImage(video, x, y, w, h, 0, 0, c.width, c.height);
+    c.width = Math.max(1, Math.round(r.w * sw)); c.height = Math.max(1, Math.round(r.h * sh));
+    c.getContext('2d').drawImage(src, r.x * sw, r.y * sh, r.w * sw, r.h * sh, 0, 0, c.width, c.height);
     return c;
+  }
+
+  function cropToFrame(video, frame) {
+    return cropCanvas(video, video.videoWidth, video.videoHeight, frameRect(video, frame));
+  }
+
+  // Likhet mellom to bilder (korrelasjon på små gråtonebilder) – brukes for å sjekke at fotoet viser det samme som videoen
+  function similarity(a, b) {
+    const W = 48, H = 24;
+    const g = (src) => {
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, W, H);
+      const d = x.getImageData(0, 0, W, H).data, v = new Float32Array(W * H);
+      for (let i = 0; i < v.length; i++) v[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
+      const m = v.reduce((s, t) => s + t, 0) / v.length;
+      let sd = 0; for (let i = 0; i < v.length; i++) { v[i] -= m; sd += v[i] * v[i]; }
+      sd = Math.sqrt(sd) || 1; for (let i = 0; i < v.length; i++) v[i] /= sd;
+      return v;
+    };
+    const va = g(a), vb = g(b);
+    let s = 0; for (let i = 0; i < va.length; i++) s += va[i] * vb[i];
+    return s;
+  }
+
+  // Fotoet kan ha annet format enn videoen (4:3 mot 16:9) og ev. ikke være zoomet. Prøv mulige utsnitt og velg det som ligner mest på videoen.
+  function photoCrop(photo, rect, videoCrop, va, zoom) {
+    const PW = photo.width, PH = photo.height, pa = PW / PH;
+    const cands = [];
+    for (const z of zoom > 1.05 ? [1, zoom] : [1]) {
+      // synlig område av fotoet som tilsvarer videobildet
+      let vw = PW, vh = PH, ox = 0, oy = 0;
+      if (pa < va) { vh = PW / va; oy = (PH - vh) / 2; } else { vw = PH * va; ox = (PW - vw) / 2; }
+      // foto uten zoom: videoen viser bare midten
+      const zw = vw / z, zh = vh / z, zx = ox + (vw - zw) / 2, zy = oy + (vh - zh) / 2;
+      const r = { x: (zx + rect.x * zw) / PW, y: (zy + rect.y * zh) / PH, w: rect.w * zw / PW, h: rect.h * zh / PH };
+      const c = cropCanvas(photo, PW, PH, r);
+      cands.push({ c, s: similarity(c, videoCrop) });
+    }
+    cands.sort((a, b) => b.s - a.s);
+    return cands[0].s > 0.55 ? cands[0].c : null;
+  }
+
+  // Tar et ekte foto i full oppløsning (skarpere og mer detaljer enn videoen). Faller tilbake til beste videobilde.
+  async function capture(video, frame) {
+    const rect = frameRect(video, frame);
+    const shot = await bestShot(video, frame, 3, 90);
+    const track = stream && stream.getVideoTracks()[0];
+    if (track && 'ImageCapture' in window) {
+      try {
+        const ic = new ImageCapture(track);
+        const blob = await Promise.race([ic.takePhoto(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3500))]);
+        const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' }).catch(() => createImageBitmap(blob));
+        if (bmp.width * bmp.height > video.videoWidth * video.videoHeight * 1.2) {
+          const crop = photoCrop(bmp, rect, shot.crop, video.videoWidth / video.videoHeight, getZoom());
+          if (crop) return { crop, full: shot.full, hires: true };
+        }
+      } catch (e) { console.warn('takePhoto', e); }
+    }
+    return { crop: shot.crop, full: shot.full, hires: false };
   }
 
   // ---------- Tekstgjenkjenning (Tesseract.js) ----------
@@ -287,7 +350,7 @@ const Scan = (() => {
     return u > 0 ? i / u : 0;
   }
 
-  return { start, zoomRange, setZoom, getZoom, cameraInfo, reprobe, stop, running, watchBarcodes, snapshot, cropToFrame, bestShot, torchSupported, setTorch, fileToCanvas, detectIn, ocr, validEan, normEan };
+  return { capture, start, zoomRange, setZoom, getZoom, cameraInfo, reprobe, stop, running, watchBarcodes, snapshot, cropToFrame, bestShot, torchSupported, setTorch, fileToCanvas, detectIn, ocr, validEan, normEan };
 })();
 
 // ---------- Bildebehandling før tekstlesing ----------

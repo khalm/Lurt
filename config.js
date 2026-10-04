@@ -4,4 +4,5 @@
 window.LURT_CONFIG = {
   apiKey: '',   // fra secret KASSAL_KEY
   proxy: '',    // fra secret PROXY_URL (Cloudflare-proxy som har nøkkelen selv)
+  geminiKey: '', // fra secret GEMINI_KEY (KI-lesing av hyllelapper)
 };

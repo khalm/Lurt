@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '2.0.0';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -127,8 +127,7 @@ const fmtKm = (d) => d < 1 ? Math.round(d * 1000) + ' m' : d.toFixed(1).replace(
 // ---------- Skanning ----------
 const HINTS = {
   barcode: 'Hold strekkoden inne i rammen – den leses automatisk.',
-  label: 'Gå nær, så hyllelappen fyller rammen. Hold stødig og unngå gjenskinn.',
-  product: 'Strekkoden er sikrest: snu varen så den synes. Ellers – ta bilde av forsiden med merke og navn inne i rammen.',
+  label: 'Hold telefonen rett foran lappen så den fyller rammen, og trykk «Les lappen». Unngå gjenskinn.',
 };
 $$('.mode').forEach(b => b.addEventListener('click', () => {
   state.mode = b.dataset.mode;
@@ -213,9 +212,8 @@ async function shootLabel(knownEan) {
   if (state.busy) return;
   state.busy = true;
   status('Hold stødig …');
-  const video = $('#video');
   let shot;
-  try { shot = await Scan.bestShot(video, $('#frame')); }
+  try { shot = await Scan.capture($('#video'), $('#frame')); }
   finally { state.busy = false; }
   Scan.stop(); camIdle();
   await analyzeImage(shot.full, knownEan, shot.crop);
@@ -229,67 +227,73 @@ $('#filePick').addEventListener('change', async (e) => {
   await analyzeImage(canvas);
 });
 
+// Lokal tekstlesing (reserve når KI-lesing ikke er satt opp eller ikke svarer)
+async function readLocal(img) {
+  status('Leser teksten på lappen …');
+  const res = await Scan.ocr(img, (s, p) => {
+    if (/loading|initializ/i.test(s)) status('Gjør klar tekstleser … ' + (p ? Math.round(p * 100) + ' %' : ''));
+  });
+  const read = Label.parse(res);
+  const bd = Brands.detect(read.words);
+  read.brands = bd.brands;
+  read.words = [...bd.brands, ...bd.words.filter(w => !bd.brands.includes(w))].slice(0, 8);
+  read.source = 'local';
+  return read;
+}
+
+// KI-lesing → samme format som lokal lesing
+function fromAI(r) {
+  const seen = new Set();
+  const words = [r.brand, ...(r.search || '').split(/\s+/), ...(r.product || '').split(/\s+/)]
+    .filter(w => w && w.length >= 2 && !/^\d+([.,]\d+)?$/.test(w))
+    .filter(w => { const k = w.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 8);
+  return {
+    price: r.price, before: r.before && r.price && r.before > r.price ? r.before : null, offer: r.offer || !!r.before,
+    unitPrice: r.unitPrice, unit: r.unit, multi: r.multi, size: r.size,
+    product: r.product, brands: r.brand ? [r.brand] : [], words,
+    query: r.search || [r.brand, r.product].filter(Boolean).join(' '),
+    ean: r.ean && Scan.validEan(Scan.normEan(r.ean)) ? Scan.normEan(r.ean) : null,
+    source: 'ai',
+  };
+}
+
 async function analyzeImage(canvas, knownEan, crop) {
   state.busy = true;
+  const img = crop || canvas;
   try {
     status('Ser etter strekkode …');
-    const ean = knownEan || await Scan.detectIn(canvas).catch(() => null);
-    const isLabel = state.mode === 'label';
-    // Har vi strekkoden, trengs tekst bare for å lese prisen på hyllelappen
-    if (ean && !isLabel) { status(''); return openEan(ean); }
-    // Vare-modus: gjenkjenn varen på bildet (parallelt med tekstlesing)
-    let visualP = null;
-    if (state.mode === 'product' && Vision.enabled() && await visionOk()) {
-      visualP = (async () => {
-        await Vision.load((f, total) => status(`Laster ned bildegjenkjenning (første gang, ca. ${Math.round(total / 1e6)} MB) … ${Math.round(f * 100)} %`));
-        const emb = await Vision.embedCanvas(crop || canvas);
-        return { emb, cats: Vision.classify(emb) };
-      })().catch((e) => {
-        console.warn('Bildegjenkjenning feilet', e);
-        try { localStorage.setItem('lurt.vision.err', String(e && e.message || e).slice(0, 200)); } catch { /* */ }
-        return { failed: true };
-      });
+    const ean = knownEan || await Scan.detectIn(img).catch(() => null) || (crop ? await Scan.detectIn(canvas).catch(() => null) : null);
+    if (state.mode === 'barcode') {
+      if (ean) { status(''); return openEan(ean); }
+      status('Fant ingen strekkode i bildet. Prøv igjen, eller bytt til «Hyllelapp».', 'bad');
+      return;
     }
-    status('Leser teksten i bildet …');
-    const res = await Scan.ocr(crop || canvas, (s, p) => {
-      if (/loading|initializ/i.test(s)) status('Gjør klar tekstleser … ' + (p ? Math.round(p * 100) + ' %' : ''));
-    });
-    const read = Label.parse(res);
-    const bd = Brands.detect(read.words);
-    read.brands = bd.brands;
-    // Merket først, så resten av ordene
-    read.words = [...bd.brands, ...bd.words.filter(w => !bd.brands.includes(w))].slice(0, 8);
+    let read = null, aiFailed = null;
+    if (AI.enabled()) {
+      status('Leser lappen …');
+      try {
+        const r = await AI.readLabel(img);
+        if (r.readable && (r.price || r.product)) read = fromAI(r);
+        else aiFailed = 'unreadable';
+      } catch (e) { aiFailed = e.quota ? 'quota' : 'error'; console.warn('KI-lesing', e); }
+    }
+    if (!read) read = await readLocal(img);
+    read.aiFailed = aiFailed;
     const finalEan = ean || read.ean;
-    if (finalEan) {
-      status('');
-      return openEan(finalEan, { shelfPrice: isLabel ? read.price : null, claimedBefore: isLabel ? read.before : null });
-    }
-    if (visualP) {
-      status('Kjenner igjen varen …');
-      const v = await visualP;
-      if (v && v.failed) read.visionFailed = true; else { read.visual = v; localStorage.removeItem('lurt.vision.err'); }
-    }
     status('');
-    if (!read.words.length && !(read.visual && read.visual.cats.length)) {
-      status(state.mode === 'product'
-        ? 'Fant ingen tydelig tekst. Snu varen så strekkoden synes – det er sikrest. Eller ta bildet nærmere, med merke og navn i rammen.'
+    if (finalEan) return openEan(finalEan, { shelfPrice: read.price, claimedBefore: read.before });
+    if (!read.words.length && !read.query) {
+      status(aiFailed === 'unreadable'
+        ? 'Klarte ikke å lese lappen. Gå nærmere så lappen fyller rammen, hold stødig og unngå gjenskinn.'
         : 'Fant ingen tydelig tekst. Gå nærmere så lappen fyller rammen, og unngå gjenskinn.', 'bad');
       return;
     }
-    read.preview = (crop || canvas).toDataURL('image/jpeg', 0.7);
-    showPick(read, isLabel);
+    read.preview = img.toDataURL('image/jpeg', 0.7);
+    showPick(read, true);
   } catch (e) {
     status(e.code ? apiErrorText(e) : 'Klarte ikke å lese bildet: ' + esc(e.message), 'bad');
   } finally { state.busy = false; }
-}
-
-async function visionOk() {
-  if (Vision.downloaded() || Vision.ready()) return true;
-  const c = navigator.connection || {};
-  if (c.saveData || c.type === 'cellular') {
-    return confirm(`Bildegjenkjenning lastes ned første gang (ca. ${Vision.MODEL_MB} MB) og lagres på telefonen.\n\nDu ser ut til å være på mobildata. Laste ned nå?`);
-  }
-  return true;
 }
 
 // Manuelt søk / strekkode
@@ -303,41 +307,49 @@ $('#manual').addEventListener('submit', (e) => {
 });
 
 // ---------- Velg vare ----------
-let pendingRead = null, chosenWords = [], pendingVisual = null, pendingBrands = [], shownList = new Map();
+let pendingRead = null, chosenWords = [], pendingBrands = [];
+const priceInput = (v) => v != null ? String(v.toFixed(2)).replace('.', ',') : '';
 async function showPick(read, isLabel) {
   pendingRead = isLabel ? read : null;
+  pendingBrands = read.brands || [];
   go('pick');
   const lr = $('#labelRead');
   const bits = [];
   if (read.preview) bits.push(`<img class="readprev" src="${read.preview}" alt="Bildet som ble lest">`);
-  if (isLabel && (read.price || read.before)) {
-    bits.push(`Lest fra lappen: <b>${read.price ? kr(read.price) : '–'}</b>${read.before ? ` · før ${kr(read.before)}` : ''}${read.offer ? ' · <span class="tag">tilbud</span>' : ''}`);
+  if (isLabel) {
+    const info = [read.product && `<b>${esc(read.product)}</b>`, read.size && esc(read.size)].filter(Boolean).join(' · ');
+    if (info) bits.push(info);
+    bits.push(`<div class="readprice">
+      <label>Pris <input id="rdPrice" inputmode="decimal" value="${priceInput(read.price)}" placeholder="–"> kr</label>
+      <label>Før <input id="rdBefore" inputmode="decimal" value="${priceInput(read.before)}" placeholder="–"> kr</label>
+    </div>${read.offer ? '<span class="tag">tilbud</span> ' : ''}${read.multi ? `<span class="tag">${esc(read.multi)}</span> ` : ''}${
+      read.unitPrice ? `<span class="small muted">${esc(String(read.unitPrice).replace('.', ','))} kr/${esc(read.unit || 'kg')}</span>` : ''}`);
+    if (read.aiFailed === 'quota') bits.push('<span class="small muted">⚠️ Dagens gratiskvote for KI-lesing er brukt opp – lest lokalt i stedet.</span>');
+    else if (read.aiFailed === 'error') bits.push('<span class="small muted">⚠️ KI-lesing svarte ikke – lest lokalt i stedet.</span>');
   }
-  chosenWords = read.manual ? [] : read.words.slice(0, 3);
-  pendingVisual = read.visual || null;
-  pendingBrands = read.brands || [];
-  const catTerms = pendingVisual ? pendingVisual.cats.filter(c => c.p > 0.12).map(c => c.term).slice(0, 3) : [];
-  if (read.visionFailed) bits.push('<span class="small muted">⚠️ Bildegjenkjenningen virket ikke denne gangen – viser treff fra teksten.</span>');
-  if (catTerms.length) {
-    bits.push(`<span class="small muted">👁️ Ser ut som:</span><div class="chips words">${
-      catTerms.map(t => `<button class="chip cat" data-word="${esc(t)}">${esc(t)}</button>`).join('')}</div>`);
-  }
+  chosenWords = read.manual ? [] : (read.source === 'ai' ? read.query.split(/\s+/) : read.words.slice(0, 3));
   if (read.words.length) {
-    bits.push(`<span class="small muted">Ord i bildet – trykk for å velge hvilke det skal søkes på:</span><div class="chips words">${
-      read.words.map(w => `<button class="chip ${chosenWords.includes(w) ? 'on' : ''}" data-word="${esc(w)}">${(read.brands || []).includes(w) ? '🏷️ ' : ''}${esc(w)}</button>`).join('')}</div>`);
+    bits.push(`<span class="small muted">Søkeord – trykk for å slå av/på:</span><div class="chips words">${
+      read.words.map(w => `<button class="chip ${chosenWords.some(c => c.toLowerCase() === w.toLowerCase()) ? 'on' : ''}" data-word="${esc(w)}">${pendingBrands.includes(w) ? '🏷️ ' : ''}${esc(w)}</button>`).join('')}</div>`);
   }
   lr.classList.toggle('hidden', !bits.length);
   lr.innerHTML = bits.map(b => `<div class="rd">${b}</div>`).join('');
-  $('#refineInput').value = read.manual ? read.query : chosenWords.join(' ');
-  await runSearch(read.manual ? read.query : null, read.manual ? [] : read.words, catTerms);
+  const q = read.manual ? read.query : chosenWords.join(' ');
+  $('#refineInput').value = q;
+  await runSearch(q, read.manual ? [] : read.words);
 }
+const readNum = (id) => {
+  const el = $(id); if (!el) return null;
+  const n = Number(el.value.replace(/[^\d,.]/g, '').replace(',', '.'));
+  return el.value.trim() && n > 0 ? n : null;
+};
 $('#labelRead').addEventListener('click', (e) => {
   const b = e.target.closest('[data-word]');
   if (!b) return;
   const w = b.dataset.word;
-  if (b.classList.contains('cat')) { $('#refineInput').value = w; return runSearch(null, chosenWords, [w]); }
-  chosenWords = chosenWords.includes(w) ? chosenWords.filter(x => x !== w) : [...chosenWords, w];
-  b.classList.toggle('on', chosenWords.includes(w));
+  const has = chosenWords.some(c => c.toLowerCase() === w.toLowerCase());
+  chosenWords = has ? chosenWords.filter(c => c.toLowerCase() !== w.toLowerCase()) : [...chosenWords, w];
+  b.classList.toggle('on', !has);
   const q = chosenWords.join(' ');
   $('#refineInput').value = q;
   if (q) runSearch(q, chosenWords);
@@ -351,6 +363,7 @@ function matchScore(p, words) {
   let s = 0;
   for (const w of words) {
     const n = norm(w);
+    if (n.length < 2) continue;
     if (hay.includes(n)) s += 2;
     else if (n.length >= 5 && hay.includes(n.slice(0, 4))) s += 1;
   }
@@ -358,64 +371,44 @@ function matchScore(p, words) {
 }
 
 let searchSeq = 0;
-async function runSearch(q, words = [], catTerms = []) {
+async function runSearch(q, words = []) {
   const ul = $('#pickList');
   const seq = ++searchSeq;
+  if (!q && !words.length) { ul.innerHTML = ''; return; }
   ul.innerHTML = '<li class="muted">Søker …</li>';
-  // Prøv flere søk: alle ord, så færre, så enkeltord – stopp når vi har nok treff
-  const brand = !q && pendingBrands[0];
-  const rest = words.filter(w => !pendingBrands.includes(w));
-  const queries = q ? [q] : [...new Set((brand
-    ? [`${brand} ${rest[0] || ''}`, catTerms[0] && `${brand} ${catTerms[0]}`, `${brand} ${rest.slice(0, 2).join(' ')}`, brand]
-    : [words.slice(0, 3).join(' '), words.slice(0, 2).join(' '), words[0], words[1], words[2]]
-  ).map(x => x && x.trim()).filter(Boolean))];
+  const ws = words.length ? words : q.split(/\s+/);
+  const brand = pendingBrands[0];
+  const rest = ws.filter(w => !pendingBrands.includes(w));
+  // Flere søk: hele søket, så merke + første ord, så færre ord – stopp når vi har nok treff
+  const queries = [...new Set([q, brand && `${brand} ${rest[0] || ''}`, ws.slice(0, 2).join(' '), brand, ws[0], ws[1]]
+    .map(x => x && x.trim()).filter(Boolean))];
   const found = new Map();
   try {
     const add = (list) => { for (const p of list) { const e = found.get(p.ean); if (e) e.hits++; else found.set(p.ean, { ...p, hits: 1 }); } };
     for (const qq of queries.slice(0, 4)) {
-      add(await API.search(qq, pendingVisual ? 25 : 15));
-      if (found.size >= (pendingVisual ? 12 : 6)) break;
+      add(await API.search(qq));
+      if (found.size >= 8) break;
     }
-    // Varetype fra bildegjenkjenningen gir flere kandidater å sammenligne bildene med
-    if (!q && pendingVisual) for (const t of catTerms.slice(0, 2)) add(await API.search(t, 30));
-    // Ingen treff? Søk på starten av de lengste ordene (f.eks. «Grandios» → «grand»)
-    if (!found.size && !q) {
-      const stems = [...new Set(words.filter(w => w.length >= 5).map(w => w.slice(0, 5).toLowerCase()))].slice(0, 2);
+    if (!found.size) {
+      const stems = [...new Set(ws.filter(w => w.length >= 5).map(w => w.slice(0, 5).toLowerCase()))].slice(0, 2);
       for (const st of stems) add(await API.search(st));
     }
     if (seq !== searchSeq) return;
-    const scoreWords = words.length ? words : (q || '').split(/\s+/);
-    let list = [...found.values()].map(p => ({ ...p, score: matchScore(p, scoreWords) * 2 + p.hits + (pendingBrands.some(b => Brands.isBrand(p, b)) ? 6 : 0) }));
-    // Varer du har tatt bilde av før og valgt (pugget på telefonen)
-    if (pendingVisual) {
-      for (const k of Vision.recall(pendingVisual.emb)) {
-        const ex = list.find(p => p.ean === k.ean);
-        if (ex) ex.known = k.sim; else list.push({ ...k, prices: [], hits: 0, score: 0, known: k.sim });
-      }
-    }
-    // Sammenlign bildet med produktbildene og la likheten veie tungt
-    if (pendingVisual && list.some(p => p.image)) {
-      list.sort((a, b) => b.score - a.score);
-      list = list.slice(0, 36);
-      const n = list.filter(p => p.image).length;
-      ul.innerHTML = `<li class="muted">👁️ Sammenligner med ${n} produktbilder …</li>`;
-      await Vision.rank(pendingVisual.emb, list, (d) => { if (seq === searchSeq) ul.innerHTML = `<li class="muted">👁️ Sammenligner med produktbilder … ${d}/${n}</li>`; });
-      if (seq !== searchSeq) return;
-      const sims = list.map(p => p.sim).filter(x => x != null).sort((a, b) => a - b);
-      const med = sims.length ? sims[sims.length >> 1] : 0;
-      for (const p of list) if (p.sim != null) p.score += 40 * (p.sim - med);
-    }
-    for (const p of list) if (p.known) p.score += 20 + 100 * (p.known - 0.86);
-    list = list.sort((a, b) => b.score - a.score).slice(0, 15);
-    shownList = new Map(list.map(p => [p.ean, p]));
-    const simSorted = list.filter(p => p.sim != null).sort((a, b) => b.sim - a.sim);
-    const bestVisual = simSorted.length > 1 && simSorted[0].sim - simSorted[1].sim > 0.03 && list[0] === simSorted[0] ? list[0].ean : null;
-    if (!list.length) { ul.innerHTML = '<li class="muted">Ingen treff. Velg andre ord over, eller skriv merke + type (f.eks. «tine melk»).</li>'; return; }
+    const lp = pendingRead && pendingRead.price;
+    const list = [...found.values()].map(p => {
+      let score = matchScore(p, ws) * 2 + p.hits + (pendingBrands.some(b => Brands.isBrand(p, b)) ? 6 : 0);
+      // Pris på lappen stemmer med en pris i prisdataene → sannsynligvis riktig vare
+      if (lp && p.prices.some(x => Math.abs(x - lp) < 0.01)) score += 5;
+      else if (lp && p.prices.length && Math.min(...p.prices.map(x => Math.abs(x - lp) / lp)) < 0.15) score += 2;
+      return { ...p, score };
+    }).sort((a, b) => b.score - a.score).slice(0, 15);
+    if (!list.length) { ul.innerHTML = '<li class="muted">Ingen treff. Slå av/på søkeord over, eller skriv merke + type (f.eks. «tine melk»).</li>'; return; }
     ul.innerHTML = list.map(p => {
       const lo = p.prices.length ? Math.min(...p.prices) : null;
+      const priceMatch = lp && p.prices.some(x => Math.abs(x - lp) < 0.01);
       return `<li><button class="item" data-ean="${esc(p.ean)}">
         ${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : '<div class="noimg">🛒</div>'}
-        <div>${p.known ? '<span class="tag">⭐ Kjent fra før</span> ' : p.ean === bestVisual ? '<span class="tag">👁️ Mest lik</span> ' : ''}<b>${esc(p.name)}</b><span class="muted small">${esc(p.brand)}${lo != null ? ' · fra ' + kr(lo) : ''}${p.sim != null ? ' · ' + Math.round(p.sim * 100) + ' % lik' : ''}</span></div>
+        <div>${priceMatch ? '<span class="tag">✓ Samme pris</span> ' : ''}<b>${esc(p.name)}</b><span class="muted small">${esc(p.brand)}${lo != null ? ' · fra ' + kr(lo) : ''}</span></div>
       </button></li>`;
     }).join('');
   } catch (e) { if (seq === searchSeq) ul.innerHTML = `<li class="status bad">${apiErrorText(e)}</li>`; }
@@ -423,9 +416,8 @@ async function runSearch(q, words = [], catTerms = []) {
 $('#pickList').addEventListener('click', (e) => {
   const b = e.target.closest('[data-ean]');
   if (!b) return;
-  const chosen = shownList.get(b.dataset.ean);
-  if (pendingVisual && chosen) Vision.remember(pendingVisual.emb, chosen);
-  openEan(b.dataset.ean, { shelfPrice: pendingRead && pendingRead.price, claimedBefore: pendingRead && pendingRead.before });
+  const price = pendingRead ? readNum('#rdPrice') : null, before = pendingRead ? readNum('#rdBefore') : null;
+  openEan(b.dataset.ean, { shelfPrice: price, claimedBefore: before && price && before > price ? before : null });
 });
 
 // ---------- Resultat ----------
@@ -663,13 +655,14 @@ function camInfoText() {
   if (i.macroId) return '🔬 Makro-/nærfokuslinse funnet. Den brukes automatisk på hyllelapper (bytt med «Nær»-knappen).';
   return `Nettleseren gir tilgang til ${i.back || 1} bakkamera${(i.back || 1) > 1 ? 'er' : ''}, men ingen egen makrolinse. Ved nærbilder zoomes det inn i stedet, så du kan holde telefonen litt unna.`;
 }
-$('#forgetMem').addEventListener('click', () => { if (confirm('Glemme alle varer appen har pugget fra bildene dine?')) { Vision.forget(); loadSettingsForm(); } });
-$('#visionOn').addEventListener('change', (e) => saveSettings({ vision: e.target.checked }));
+$('#aiOn').addEventListener('change', (e) => saveSettings({ ai: e.target.checked }));
 function loadSettingsForm() {
-  $('#visionOn').checked = Vision.enabled();
-  $('#memInfo').textContent = `Kjenner ${Brands.count()} varemerker · har pugget ${Vision.memCount()} ${Vision.memCount() === 1 ? 'vare' : 'varer'} fra bildene dine.`;
-  const verr = localStorage.getItem('lurt.vision.err');
-  $('#visionInfo').textContent = verr ? 'Siste feil: ' + verr : Vision.downloaded() ? 'Lastet ned og klar.' : `Lastes ned første gang du tar bilde av en vare (ca. ${Vision.MODEL_MB} MB, bruk gjerne Wi-Fi).`;
+  $('#aiOn').checked = settings().ai !== false;
+  $('#aiOn').disabled = !AI.available();
+  const aerr = AI.lastError();
+  $('#aiInfo').textContent = !AI.available()
+    ? 'Ikke satt opp. Uten KI-lesing brukes enklere tekstlesing på telefonen (se README for oppsett).'
+    : aerr ? 'Siste feil: ' + aerr : 'Klar' + (AI.lastModel() ? ` (${AI.lastModel()})` : '') + '. Bildet av lappen sendes til Google for å leses.';
   $('#camInfo').textContent = camInfoText();
   $('#autoStore').checked = settings().autoStore !== false;
   $('#dataStatus').innerHTML = API.access().ready
