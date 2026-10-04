@@ -1,7 +1,7 @@
 // app.js — skjermer og logikk for Lurt?
 'use strict';
 
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.0.2';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -720,4 +720,15 @@ setTimeout(() => {
 
 refreshDemoBtn();
 autoStore({ ask: true }); // spør om posisjon med en gang appen åpnes
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    reg.update().catch(() => {});
+    // Ny versjon tatt i bruk → last siden på nytt én gang, så du ser den med en gang
+    let reloaded = false;
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded || !hadController) return;
+      reloaded = true; location.reload();
+    });
+  }).catch(() => {});
+}

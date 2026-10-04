@@ -1,9 +1,10 @@
 // sw.js — gjør appen installerbar og lar den åpne uten nett
-const VERSION = 'lurt-2.0.1';
+const VERSION = 'lurt-2.0.2';
 const CORE = ['./', 'index.html', 'style.css', 'config.js', 'app.js', 'api.js', 'verdict.js', 'scan.js', 'ai.js', 'brands.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon-48.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
+  // cache: 'reload' = hent alltid ferske filer fra serveren, ikke nettleserens hurtigbuffer
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== 'lurt-libs').map(k => caches.delete(k)))).then(() => self.clients.claim()));
@@ -26,7 +27,7 @@ self.addEventListener('fetch', (e) => {
   }
   // Egne filer: nett først (får oppdateringer), ellers lagret kopi
   if (url.origin === location.origin) {
-    e.respondWith(fetch(e.request).then(res => {
+    e.respondWith(fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }).then(res => {
       const copy = res.clone();
       caches.open(VERSION).then(c => c.put(e.request, copy));
       return res;
